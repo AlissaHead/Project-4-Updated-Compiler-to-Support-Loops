@@ -1,25 +1,22 @@
-# CST-405 Project 2: Minimalist Language Compiler
+# CST-405 Project 3: Complex Variables and Functions
 
 **Author:** Alissa Head (worked alone, so every task below is mine)<br>
-**Course:** CST-405 Compiler Design, Topic 2 (Sep 14 – Oct 11, 2026)
+**Course:** CST-405 Principles of Compiler Design, Topic 3 (Oct 12 – Nov 1, 2026)
 
-This is a complete compiler for a very small C-like language. It takes a `.cm`
-source file through six phases (scanning, parsing, semantic analysis,
-three-address code, optimization and code generation) and writes MIPS assembly
-that runs in SPIM / QtSPIM.
-
-### ▶ Video walkthrough
-
-[![Video: how the compiler works, and a live demo](https://img.youtube.com/vi/XlTVgPnq-Oo/hqdefault.jpg)](https://youtu.be/XlTVgPnq-Oo)
-
-**Watch on YouTube: https://youtu.be/XlTVgPnq-Oo.** It covers how the code
-works, the tasks I completed, how the AST is turned into intermediate code and
-MIPS, and a live demo.
+This project extends the Project 2 compiler with arrays, full arithmetic,
+functions, recursion, scope and real activation records. It compiles a C-like
+language through six phases into MIPS assembly that runs in SPIM / QtSPIM.
 
 ```
 source.cm ──► scanner ──► parser ──► semantic ──► TAC ──► optimizer ──► codegen ──► peephole ──► source.s
              (tokens)     (AST)      (verdict)   (.tac)  (.optimized.tac)  (MIPS)               (file)
 ```
+
+### ▶ Video walkthrough
+
+[![Video: the compiler running, how it works, and a live demo](https://img.youtube.com/vi/d2nYQScGFUs/hqdefault.jpg)](https://youtu.be/d2nYQScGFUs)
+
+**Watch on YouTube: https://youtu.be/d2nYQScGFUs**
 
 ---
 
@@ -34,9 +31,9 @@ cd compiler
 make                 # build ./minicompiler
 make check           # unit tests + regression tests (all must PASS)
 
-./minicompiler tests/ast_demo.cm out.s        # full trace of all six phases
-./minicompiler tests/ast_demo.cm out.s -q     # quiet: errors + summary only
-spim -file out.s                              # run the generated MIPS  ->  18
+./minicompiler tests/t3_06_recursion.cm out.s      # full trace of all six phases
+./minicompiler tests/t3_06_recursion.cm out.s -q   # quiet: errors + summary only
+spim -file out.s                                   # run the generated MIPS
 ```
 
 | Option    | Effect |
@@ -45,364 +42,467 @@ spim -file out.s                              # run the generated MIPS  ->  18
 | `-O0`     | Skips Phase 5 (TAC optimizer). The back end translates the raw TAC. |
 | `-nopeep` | Skips the peephole pass over the generated MIPS. |
 
-Each compile writes three files next to the `.s` file: `out.s`, `out.tac`
-(the IR before optimization) and `out.optimized.tac` (the IR the back end
-actually used). The exit status is **0** on success and **1** if any phase
-reports an error.
+Each compile writes `out.s`, `out.tac` (the IR before optimization) and
+`out.optimized.tac` (the IR the back end used). The exit status is **0** on
+success and **1** if any phase reports an error.
 
 ---
 
-## 2. The language
+## 2. What this milestone adds
 
-```c
-// declarations (optionally with a value), assignment, + - *, parentheses, print
-int a = 2;
-int b;
-b = (a + 3) * 4;
-print(b - a);      /* prints 18 */
-```
+| Feature | Example | Test |
+|---------|---------|------|
+| All four operators, precedence, unary minus | `-(a + b) * c / 2` | `t3_01`, `t3_10` |
+| Arrays, read and write | `arr[i] = arr[j] + 1;` | `t3_03`, `t3_09` |
+| Global and local arrays | `int g[4];` / `int l[3];` | `t3_03`, `t3_09` |
+| Arrays passed by reference | `int sum3(int a[])` | `t3_03`, `t3_09`, `t3_16` |
+| Functions, parameters, return values | `int add3(int a, int b, int c)` | `t3_04` |
+| Recursion | `fact(5)` is 120 | `t3_06`, `t3_16` |
+| Nested calls | `f(1, g(2))`, `f(g(1), 2)` | `t3_04`, `t3_07` |
+| Scope, shadowing, block scope | `int x; { int x; }` | `t3_05`, `t3_11` |
+| Calls before definitions (two passes) | `main` above its callees | `t3_06`, `t3_12` |
+| Real activation records | locals survive calls | `t3_08` |
+
+**Two additions the feature list doesn't name:**
+
+- **`if`/`else` and comparisons (`< > <= >= == !=`).** The project requires
+  `factorial(5)`, but recursion cannot stop without a conditional, and `if`
+  isn't scheduled until Topic 5. This is the smallest addition that meets the
+  requirement. It also gives the flow optimizer real jumps to work on.
+- **`void` functions** (an optional extension): `void f(void)`, `return;`. See
+  `t3_14`.
+
+---
+
+## 3. The language
 
 ```
-program     ->  stmt_list
+program     ->  top_list
+top_list    ->  top_item  |  top_list top_item
+top_item    ->  func_def  |  stmt
+func_def    ->  ('int' | 'void') ID '(' params ')' block
+params      ->  (empty)  |  'void'  |  param_list
+param_list  ->  param  |  param_list ',' param
+param       ->  'int' ID  |  'int' ID '[' ']'
+block       ->  '{' '}'  |  '{' stmt_list '}'
 stmt_list   ->  stmt  |  stmt_list stmt
-stmt        ->  decl  |  assign  |  print_stmt
-decl        ->  'int' ID ';'  |  'int' ID '=' expr ';'
-assign      ->  ID '=' expr ';'
-expr        ->  NUM  |  ID  |  expr '+' expr  |  expr '-' expr  |  expr '*' expr  |  '(' expr ')'
+stmt        ->  decl  |  assign  |  print_stmt  |  return_stmt
+             |  if_stmt  |  block  |  func_call ';'
+decl        ->  'int' ID ';'  |  'int' ID '=' expr ';'  |  'int' ID '[' NUM ']' ';'
+assign      ->  ID '=' expr ';'  |  ID '[' expr ']' '=' expr ';'
+return_stmt ->  'return' expr ';'  |  'return' ';'
+if_stmt     ->  'if' '(' expr ')' stmt  [ 'else' stmt ]
+expr        ->  NUM  |  ID  |  ID '[' expr ']'  |  func_call
+             |  expr ('+' | '-' | '*' | '/') expr
+             |  expr ('<' | '>' | '<=' | '>=' | '==' | '!=') expr
+             |  '-' expr  |  '(' expr ')'
+func_call   ->  ID '(' args ')'
+args        ->  (empty)  |  expr  |  args ',' expr
 print_stmt  ->  'print' '(' expr ')' ';'
 ```
 
-`*` binds tighter than `+` and `-`, and all three are left-associative.
-Both comment styles, `// …` and `/* … */`, are supported.
+Precedence, lowest to highest: `== !=`, then `< > <= >=`, then `+ -`, then
+`* /`, then unary minus, matching the course grammar reference. All the binary
+operators are left-associative. Bare semicolons (empty statements) are not part
+of the grammar reference, so `;` alone is a syntax error.
+
+**Keeping Project 2 programs working.** A file with **no functions** is still a
+flat list of statements inside an implicit `main()`, exactly as in Project 2,
+which is why every Project 2 test passes unchanged. In a file that **does**
+define a function, executable statements must be inside a function, and `main`
+is required.
 
 ---
 
-## 3. The six phases: input, output, and how each works
+## 4. The six phases
 
-| # | Phase | File(s) | Input | Output |
-|---|-------|---------|-------|--------|
-| 1 | Lexical analysis | `scanner.l` | characters | tokens (with line and column) |
+| # | Phase | File(s) | Receives | Produces |
+|---|-------|---------|----------|----------|
+| 1 | Lexical analysis | `scanner.l` | characters | tokens with line and column |
 | 2 | Syntax analysis | `parser.y`, `ast.c` | tokens | abstract syntax tree |
-| 3 | Semantic analysis | `semantic.c`, `symtab.c` | AST | AST + pass/fail verdict |
+| 3 | Semantic analysis | `semantic.c` | AST | resolved AST + verdict |
 | 4 | Intermediate code | `tac.c` | AST | three-address code (`.tac`) |
 | 5 | Optimization | `tac.c` | TAC | smaller TAC (`.optimized.tac`) |
-| 6 | Code generation | `codegen.c`, `peephole.c` | optimized TAC | MIPS assembly (`.s`) |
+| 6 | Code generation | `codegen.c`, `symtab.c`, `peephole.c` | optimized TAC | MIPS (`.s`) |
 
-The driver, `main.c`, runs the phases in order and **stops at the first phase
-that reports an error**, so nothing is generated for an incorrect program.
+The driver, `main.c`, stops at the first phase that reports an error, so an
+incorrect program never produces assembly.
 
-### Phase 1: Lexical analysis (`scanner.l`)
-Flex turns the token rules into a finite automaton. Two rules decide every
-ambiguity. **Longest match:** a closed comment beats the unterminated-comment
-rule because it is one character longer. **First match:** the keyword rules
-`int` and `print` sit above the identifier rule, so `int` is never scanned as
-an `ID`.
+### Phase 1: Scanner
+New tokens: `return if else void`, `/`, the comparisons, and `{ } [ ] ,`.
+**Longest match** keeps `/` from swallowing a comment (`//` and `/*` match more
+characters) and makes `<=` beat `<`. **First match** puts keywords above the
+identifier rule. Later keywords (`while`, `for`, `break`, `switch`, `case`,
+`default`) are already reserved, so using one as a name is a clear syntax error.
 
-*Errors:* an unknown character, or a `/*` comment that never closes, prints
-`Lexical Error at line L, column C: …` on **stderr**. The scanner keeps going,
-so every bad character in the file is reported in one run. It also counts the
-errors, and the driver refuses to certify the program if the count is not zero.
+### Phase 2: Parser and AST
+New nodes: `FUNC_DEF`, `PARAM`, `PARAM_LIST`, `FUNC_CALL`, `ARG_LIST`, `RETURN`,
+`BLOCK`, `ARRAY_DECL`, `ARRAY_INDEX`, `IF`.
 
-### Phase 2: Syntax analysis and the AST (`parser.y`, `ast.c`)
-Bison builds an LALR(1) parser. Every grammar rule has an action that builds
-**one AST node** with a constructor from `ast.c` (`createDecl`, `createAssign`,
-`createBinOp`, `createNum`, `createVar`, `createPrint`, `createStmtList`).
+- **Variable or function?** Both start `int ID`. An LALR(1) parser shifts that
+  shared prefix and lets the next token decide: `(` means a function, and `;`,
+  `=` or `[` means a variable.
+- **Precedence** comes from the `%left` table, not from term/factor rules.
+  `%prec UMINUS` makes `-2 * 3` parse as `(-2) * 3`.
+- **Unary minus** is a `BINOP` with op `'u'` and no right operand.
+- **Parentheses build no node.** The tree's shape already records the grouping.
+- Each node records the line its construct **started** on (`%locations`),
+  because by reduce time Bison may already have read the next line.
+- Error productions name the mistake and give the line, the column and a caret.
 
-Design decisions:
-- **Parentheses build no node.** The shape of the tree already records the
-  grouping, which is what makes the tree *abstract*.
-- **`int x = e;` is sugar** for a `DECL` followed by an `ASSIGN`, so no later
-  phase needs a special case for it.
-- **Error productions** name the mistake instead of printing "syntax error":
-  `missing ';' after the assignment to 'x'`, `missing ')' to close the '(' after print`,
-  `expected a value after '+'`. Each message carries the line and column where
-  the missing token belonged, and shows the source line with a caret under
-  that column.
-- **Panic-mode recovery** (`error ';'`) skips to the next `;` and keeps
-  parsing, so one compile reports *every* syntax error (see `t2_06`).
+### Phase 3: Semantic analysis
 
-When there are no lexical or syntax errors, the driver prints
-`✓ Parse succeeded — no lexical or syntax errors` and displays the AST:
+Two passes, so a function can be called above its definition:
 
-![AST for ast_demo.cm](screenshots/ast_tree.png)
-
-### Phase 3: Semantic analysis (`semantic.c`, `symtab.c`)
-This phase walks the AST with a scope stack and checks the rules the grammar
-cannot express:
+1. **Pass 1** records every function's signature (name, parameter count, which
+   parameters are arrays, return type).
+2. **Pass 2** declares globals and checks every body against those signatures.
 
 | Check | Example | Test |
 |-------|---------|------|
-| Use of an undeclared variable | `print(ghost);` | `t2_04`, `t2_14` |
-| Duplicate declaration in the same scope | `int count; … int count;` | `t2_10` |
-| Reserved names (`t0`, `t1`, …, `L0`, …) used as variables | `int t1;` | `t2_13` |
+| Undeclared variable or array | `ghost[0] = 1;` | `t3_20` |
+| Call to an undeclared function | `missing(a)` | `t3_20` |
+| Wrong argument count | `one(1, 2)` | `t3_21` |
+| Duplicate in the same scope | `{ int c; int c; }` | `t3_22` |
+| Duplicate function | two `f`s | `t3_22` |
+| Array size of zero or less | `int a[0];`, `int a[-3];` | `t3_23` |
+| Array and scalar misuse | `x = a + 1;`, `x[0] = 1;` | `t3_24` |
+| Wrong argument kind | array where a value belongs | `t3_24` |
+| `return` type mismatch, void value used | `int f() { return; }` | `t3_25` |
+| More than 4 parameters | `f(a, b, c, d, e)` | `t3_26` |
+| Statement outside a function | `total = 1;` at file scope | `t3_26` |
+| Missing `main`, or `main` with parameters | | `t3_27`, `t3_28` |
+| A call to `main` | `main();` | `t3_32` |
+| `return` outside a function | | `t3_29` |
 
-Each error is reported with its line number and a suggested fix. The analyzer
-keeps going after an error, so all of them are reported. If there are none, it
-prints `✓ Semantic analysis passed - program is semantically correct!`.
+**Scope management: two symbol tables, two questions.**
 
-Reserved names are rejected because Phase 4 invents temporaries called `t0`,
-`t1`, and so on. A user variable with one of those names would silently
-collide with a temporary. (When this error fires, the name is still entered in
-scope, so later uses don't produce a cascade of "undeclared" errors.)
+| | Scope stack (`semantic.c`) | Storage table (`symtab.c`) |
+|---|---|---|
+| Question | Is this name **visible** here, and what does it mean? | What **address** is this name? |
+| Phase | 3 | 6 |
+| Shape | A stack of scopes, pushed and popped | One table per function, plus globals |
+| Holds | Names, is-it-an-array | Names, offsets, sizes, is-it-an-array |
+| Lifetime | Discarded after analysis | Rebuilt for each function |
 
-The **symbol table** (`symtab.c`) maps every name to a storage location: four
-bytes per `int`, at an offset from `$sp`, handed out in declaration order.
-Phase 6 consults it whenever it loads or stores a variable.
+Lookup searches the stack innermost-first, so shadowing needs no special code.
+Function-level scope holds the parameters and the body's top-level declarations
+together, which is why `int f(int a) { int a; }` is a duplicate. Variables and
+functions are separate namespaces, so `int total;` and `int total(...)` can
+coexist (`t3_12`).
 
-### Phase 4: Three-address code (`tac.c`)
-**How the AST becomes TAC.** `generateTACExpr` walks an expression tree
-**post-order**, which is what makes it work: both operands are generated first,
-then one instruction combines them into a fresh temporary, and the name of
-that temporary is returned to the caller.
+**The link between the two tables.** The storage table is flat, one per
+function, but a function can contain several variables with the same spelling.
+So Phase 3 resolves each use and rewrites the AST to a spelling unique within
+the function, such as `x.2`. A `.` can't appear in a source identifier, so it
+can't collide with a real name. This also handles a local declared after a line
+that used a global of the same name (`t3_11`).
 
-```
-b = (a + 3) * 4          BINOP '*'                  t0 = a + 3
-                          ├─ BINOP '+'      ──►     t1 = t0 * 4
-                          │   ├─ VAR a              b  = t1
-                          │   └─ NUM 3
-                          └─ NUM 4
-```
+### Phase 4: Three-address code
+`generateTACExpr` walks an expression **post-order** and returns the **name** of
+the location holding the result.
 
-- A `NUM` or `VAR` leaf returns its own text. No instruction is needed.
-- A `BINOP` emits `t = left op right` and returns `t`.
-- Statements consume the returned name: `ASSIGN` emits `x = t`, `PRINT`
-  emits `PRINT t`, and `DECL` emits `DECL int x` so the back end can reserve
-  a slot for it.
-- Temporaries are **recycled**: once an operand has been used, its temporary
-  goes back on a free list (`allocTemp` / `freeTemp`), so `t1` gets reused
-  above.
-- The language has no functions, so the whole program becomes the body of an
-  implicit `main` (`FUNC_BEGIN main` … `RETURN 0` … `FUNC_END main`).
+| Source | TAC |
+|--------|-----|
+| `a[i]` | `t0 = a[i]` |
+| `a[i] = v` | `a[i] = v` |
+| `-x` | `t0 = -x` |
+| `f(x, y)` | `ARG x` · `ARG y` · `t0 = CALL f, 2` |
+| `return e` | `RETURN e` |
+| `if (c) s` | `IF_FALSE c GOTO L0` · `s` · `L0:` |
 
-The listing is saved to `<output>.tac`.
+**A design decision: when ARG instructions are emitted.** The alternative was
+to emit an `ARG` right after each argument and have the back end keep a stack of
+pending arguments, so that `f(1, g(2))` doesn't mix up whose arguments are whose.
+Instead, every argument is evaluated first, and then all the `ARG`s are emitted
+in one unbroken run just before the `CALL`. `g`'s whole call finishes before any
+`ARG` of `f` exists, so nesting needs no extra machinery at all.
 
-### Phase 5: Optimization (`tac.c`)
-The optimizer runs repeatedly **until a pass changes nothing** (a fixed
-point), because each technique creates opportunities for the others:
+### Phase 5: Optimization
+Passes repeat until nothing changes (a fixed point).
 
-| Technique | Before | After |
-|-----------|--------|-------|
-| Constant folding | `t0 = 2 + 3` | `t0 = 5` |
-| Constant propagation | `a = 2` … `t0 = a + 3` | `t0 = 2 + 3` |
-| Copy propagation | `t1 = x` … `PRINT t1` | `PRINT x` |
-| Algebraic simplification | `x + 0`, `x * 1`, `x * 0`, `x / 1` | `x`, `x`, `0`, `x` |
-| Dead code elimination | `t1 = …` never read | *(removed)* |
-| Dead store elimination | `b = 18` never read again | *(removed)* |
-| **Flow:** branch simplification | `IF_FALSE 0 GOTO L1` | `GOTO L1` |
-| **Flow:** jump threading | `GOTO L1` … `L1: GOTO L2` | `GOTO L2` |
-| **Flow:** jump-to-next removal | `GOTO L1` / `L1:` | `L1:` |
-| **Flow:** unreachable code removal | code after `GOTO` / `RETURN` | *(removed)* |
+| Group | Techniques |
+|-------|-----------|
+| Value | constant folding, constant and copy propagation, algebraic simplification, dead code and dead store elimination |
+| Flow | branch simplification, jump threading, jump-to-next removal, unreachable code removal, unused label removal |
 
-Safety rules that every pass obeys:
-- A **label** ends a basic block, so all known values are forgotten there.
-- Stores to **globals** are never removed. Dead store elimination applies only
-  to locals, and only in functions with no labels (straight-line code).
-- **Division by zero** is never folded, because it has to trap at run time.
+Functions added new safety rules:
 
-The starter language has no `if` or `while`, so **a real program never
-contains a jump** and the flow passes have nothing to do. They are ready for
-when the language grows, and `tests/unit/test_optimizer.c` exercises every
-case by building TAC lists by hand.
+- **Known values are forgotten at `FUNC_BEGIN` and at labels.** A function can
+  be entered from anywhere, so nothing learned elsewhere holds inside it.
+- **A call forgets everything about globals**, including "this temporary is a
+  copy of that global", because the callee may assign any global.
+- **Propagation only touches operands that are values.** A `CALL`'s function
+  name and an array's name are left alone, even if a variable has the same spelling.
+- **An unused division is kept**, because it can still trap on a zero divisor.
 
-### Phase 6: Code generation and peephole optimization (`codegen.c`, `peephole.c`)
-**How the TAC becomes MIPS.** Every name in the TAC gets a permanent memory
-home in the activation record (`layoutFrame`). Registers `$t0`–`$t9` act as a
-**write-back cache** over those homes:
+`t3_13` shows the flow passes working: `if (2 > 3) { print(777); }` and the else
+branch of `if (1)` are removed, so `777` doesn't appear in the assembly at all.
 
-- `ensureReg(x)` returns a register holding the current value of `x`, loading
-  it only if it isn't cached already.
-- `defReg(x)` returns a register that is about to receive a new value of `x`,
-  and marks it dirty.
-- When all ten registers are busy, the least-recently-used one is evicted,
-  and it's written back first if it's dirty.
+### Phase 6: Code generation
+Every name has a permanent home in memory, and `$t0`–`$t9` act as a **write-back
+cache** over those homes. The cache is flushed before every `jal`, label, jump
+and branch, because memory is the one thing every path agrees on.
 
-Then each TAC instruction maps to a small, fixed pattern:
-
-| TAC | MIPS |
-|-----|------|
-| `x = 5` | `li $tX, 5` |
-| `x = y` | `move $tX, $tY` |
-| `t = a + b` | `add $tT, $tA, $tB`  (also `sub`, `mul`) |
-| `PRINT x` | `move $a0, $tX` · `li $v0, 1` · `syscall` · then print `"\n"` (syscall 4) |
-| `FUNC_BEGIN` / `FUNC_END` | prologue (`addi $sp`, save `$ra`) and epilogue (restore, exit with syscall 10) |
-
-Instruction selection writes into a scratch file. The finished assembly then
-goes through the **peephole optimizer**, which slides a small window over the
-instructions and removes waste that spans instruction boundaries:
-
-| Rule | Pattern | Becomes |
-|------|---------|---------|
-| Self move | `move $t1, $t1` | *(removed)* |
-| Store then load | `sw $t1, A` / `lw $t2, A` | `sw $t1, A` / `move $t2, $t1` |
-| Load then store | `lw $t1, A` / `sw $t1, A` | `lw $t1, A` |
-| Jump to next | `j L` / `L:` | `L:` |
-| Jump threading | `j L1` … `L1: j L2` | `j L2` |
-| Dead register write | `li $v0, 0` … `li $v0, 10` | `li $v0, 10` |
-
-A window rule never applies across a label. The dead-write rule follows the
-only path execution can take and gives up at any branch, jump, call or
-instruction it doesn't recognise. Stores, syscalls and `div`, which can trap,
-are never deleted. `tests/unit/test_peephole.c` checks every rule, including
-18 cases where the rule must **not** fire.
+**The peephole pass** then cleans the finished assembly: self-moves, store/load
+and load/store pairs, jumps to the next line, jump chains and dead register writes.
 
 ---
 
-## 4. Walkthrough: one program through every phase
+## 5. Arrays
 
-`tests/ast_demo.cm`:
-```c
-int a = 2;
-int b;
-b = (a + 3) * 4;
-print(b - a);
-```
+**Arrays are passed by reference.** The callee receives the base **address** of
+the caller's array, one word, not a copy. That is why an array parameter is
+written `int a[]` with **no size**: the callee's slot is four bytes however long
+the array is, so there's nothing a size would change. It also means a write
+through the parameter changes the caller's array (`t3_09`), and that a function
+taking an array usually needs the count passed as well.
 
-**TAC (Phase 4, `out.tac`), 11 instructions**
-```
-FUNC_BEGIN main
-    DECL int a
-    a = 2
-    DECL int b
-    t0 = a + 3
-    t1 = t0 * 4
-    b = t1
-    t1 = b - a          <- t1 recycled
-    PRINT t1
-    RETURN 0
-FUNC_END main
-```
+An element's address is `base + index * 4`, with the multiply done as a shift.
+The only real difference between array kinds is where `base` comes from:
 
-**Optimized TAC (Phase 5, `out.optimized.tac`), 6 instructions, 2 passes**
+| Kind | Elements live in | Base obtained by |
+|------|-----------------|-----------------|
+| Global | `.data` | `la $t, g_name` |
+| Local | this frame | `addi $t, $sp, offset` |
+| Parameter | someone else's frame or `.data` | `lw $t, offset($sp)`: the slot **holds** the address |
 
-The steps were: `a = 2` propagates into `t0 = 2 + 3`, which folds to `5`;
-then `t1 = 20`, `b = 20`, and `b - a` folds to `18`. Once nothing reads the
-temporaries or the stores, they are dead and get removed.
-```
-FUNC_BEGIN main
-    DECL int a
-    DECL int b
-    PRINT 18
-    RETURN 0
-FUNC_END main
-```
-
-**MIPS (Phase 6, `out.s`)**: with everything turned off (`-O0 -nopeep`, 20
-instructions) and fully optimized (12 instructions):
 ```asm
-# -O0 -nopeep                            # default (optimized)
-main:                                    main:
-    addi $sp, $sp, -24                       addi $sp, $sp, -16
-    sw   $ra, 20($sp)                        sw   $ra, 12($sp)
-    li   $t0, 2          # a = 2             li   $a0, 18        # print 18
-    li   $t1, 3                              li   $v0, 1
-    add  $t2, $t0, $t1   # t0 = a + 3        syscall
-    li   $t3, 4                              la   $a0, __nl
-    mul  $t4, $t2, $t3   # t1 = t0 * 4       li   $v0, 4
-    move $t5, $t4        # b = t1            syscall
-    sub  $t4, $t5, $t0   # t1 = b - a    main__epilogue:
-    move $a0, $t4        # print t1          lw   $ra, 12($sp)
-    li   $v0, 1                              addi $sp, $sp, 16
-    syscall                                  li   $v0, 10
-    la   $a0, __nl                           syscall
-    li   $v0, 4
-    syscall
-    li   $v0, 0          # return 0   <- the peephole pass removes this:
-main__epilogue:                          $v0 is overwritten by "li $v0, 10"
-    lw   $ra, 20($sp)                        before anything reads it
-    addi $sp, $sp, 24
-    li   $v0, 10
-    syscall
+# int f(int a[], int i) { return a[i]; }
+    sll  $t2, $t1, 2         # index * 4
+    add  $t2, $t2, $t0       # base + index * 4
+    lw   $t3, 0($t2)
 ```
-Both versions print `18`. The test runner checks that **every** passing
-program prints the same output with and without optimization.
 
 ---
 
-## 5. Testing
+## 6. Functions and the activation record
+
+```
+    high address
+    ┌──────────────────────────┐
+    │ saved $ra                │  frameSize-4($sp)
+    ├──────────────────────────┤
+    │ (reserved / alignment)   │  frameSize-8($sp)
+    ├──────────────────────────┤
+    │ parameters, locals,      │
+    │ arrays, temporaries      │  0($sp) ...
+    └──────────────────────────┘  <- $sp
+    low address
+```
+
+**The calling sequence:**
+
+| Caller | Callee |
+|--------|--------|
+| 1. Evaluate the arguments | 1. Push the frame: `addi $sp, $sp, -size` |
+| 2. Put them in `$a0`–`$a3` | 2. Save `$ra` in the frame |
+| 3. Flush live registers to this frame | 3. Copy parameters from `$a` registers into the frame |
+| 4. `jal` | 4. Run the body |
+| 5. Take the result from `$v0` | 5. Put the result in `$v0`, jump to the epilogue |
+| | 6. Restore `$ra`, pop the frame, `jr $ra` |
+
+Steps 2 and 3 of the caller must stay in that order: the arguments are read
+while the registers are still valid. `$t0`–`$t9` are caller-saved, so every live
+value goes back to **this activation's** frame before the `jal`. That is the
+whole reason recursion works: each call's `n` lives in its own frame.
+
+`return` **jumps to the epilogue**, the one place that restores `$ra` and pops
+the frame, so a `return` in the middle of a function skips everything after it.
+
+**`fact`, as compiled.** The compiler prints this frame during Phase 6:
+
+```
+Activation record for 'fact': 24 bytes
+    n              int        0($sp)
+    t0             int        4($sp)
+    t1             int        8($sp)
+```
+```asm
+fn_fact:
+    addi $sp, $sp, -24        # build activation record
+    sw   $ra, 20($sp)         # save return address
+    sw   $a0, 0($sp)          # parameter n
+    ...
+    jal  fn_fact              # n stays safe in THIS frame
+    move $t0, $v0             # t0 = return value
+    lw   $t1, 0($sp)          # reload n
+    mul  $t2, $t1, $t0        # t1 = n * t0
+    move $v0, $t2             # return t1
+fn_fact__epilogue:
+    lw   $ra, 20($sp)         # restore return address
+    addi $sp, $sp, 24         # discard activation record
+    jr   $ra                  # return to caller
+```
+
+**The stack at maximum depth of `fact(5)`:** one `main` frame (16 bytes) and five
+`fact` frames (24 bytes each, with `n` = 5, 4, 3, 2, 1), 136 bytes in total. Each
+frame holds its own `n` and the `$ra` of the call that created it. As the calls
+return, each frame is popped and the multiplications happen on the way back up.
+
+---
+
+## 7. Integrating more complex components
+
+The features went in cheapest first: arithmetic, then arrays, then functions.
+The approach worked because the interfaces between phases didn't have to change:
+
+- **The phase boundaries:** each phase still receives and produces the same kind of thing.
+- **The AST structure:** new features are new node kinds, and the existing nodes
+  gained only one field (`arrayLHS`).
+- **The TAC instruction set:** it already included the function, array and jump
+  opcodes. Phase 4 started emitting them and Phase 6 started lowering them.
+- **The Project 2 tests:** they ran after every change, and they run in every
+  `make test`.
+
+The risky work wasn't in the new code. It was in **old code meeting new
+assumptions**: Project 2's optimizer had only ever seen one function, and its
+register cache had rarely been under pressure. New tests found real bugs that
+way, and each now has a regression test:
+
+| Bug | Symptom | Found by |
+|-----|---------|----------|
+| Optimizer facts carried into the next function | Compile failure, or a wrong value printed | `t3_11`, `t3_14` |
+| `freeTemp("total")` read the variable as temporary `t0` | A live temporary was reused | `t3_15` |
+| The register cache could evict an operand of the instruction being generated | Wrong arithmetic under pressure | `t3_15` |
+| A dead division was deleted | A divide-by-zero trap could vanish | Unit test |
+| A propagated constant could replace a function's name | A call to the wrong label | `t3_12`, unit test |
+| Frames over 32 KB exceeded `addi`/`lw`/`sw` immediates | SPIM rejected or misread the frame | `t3_18` |
+| Identifiers over 63 characters were truncated in the register cache | Internal compiler error | `t3_19` |
+| Trapping `add` vs wrapping constant folding | Optimized and unoptimized builds disagreed | `t3_19` |
+
+---
+
+## 8. Known limitations
+
+- **No array bounds checking.** An out-of-range index silently reads or writes
+  the wrong memory. It can't be known at compile time in general, and there's no
+  run-time check.
+- **At most four parameters.** Arguments use `$a0`–`$a3` only. A fifth is a
+  reported error, not silent corruption.
+- **No global initializers.** `int x = 5;` at file scope is reported as an error.
+- **Global data is limited to SPIM's default 64 KB data segment.** A global array
+  past that faults at run time, in hand-written assembly too. Local arrays have
+  no such limit, and frames too large for a 16-bit offset are handled (`t3_18`).
+- **`main` cannot be called.** It ends with the exit syscall, not `jr $ra`, so
+  a call could never return. This is a reported error.
+- **Division by zero** is not detected at compile time. SPIM reports a breakpoint
+  exception and keeps running.
+- **Arithmetic wraps at 32 bits**, without an overflow trap, so optimized and
+  unoptimized builds agree (`t3_19`).
+- **One-dimensional arrays only.**
+- **Array sizes must be literals.**
+- **No loops yet**, so repetition is written with recursion (`t3_16`).
+- **Order of evaluation.** In `g + f()`, a global `g` is read after the call, so
+  a function that changes `g` affects the result. C leaves this order unspecified.
+
+---
+
+## 9. Testing
 
 ```bash
 make check        # = make unittest + make test
 ```
 
-**Regression tests** (`tests/run_tests.sh`). For each `tests/NAME.cm`, the
-file `tests/expected/NAME.out` holds the output SPIM must print, and
-`tests/expected/NAME.err` holds the exact error messages the compiler must
-produce (and the program must be rejected). Programs that compile are run
-twice: once optimized and once with `-O0 -nopeep`.
+**Current result: 116 / 116 passing** (39 unit tests, 77 regression runs). The
+compiler also runs clean under AddressSanitizer and UBSan on every test program.
 
-| Test | Kind | What it checks |
-|------|------|----------------|
-| `t2_01` … `t2_06`, `ast_demo` | supplied | basics, chaining, comments, undeclared variable, missing `;`, three syntax errors in one file |
-| `t2_07_precedence` | mine, runs | `*` over `+`/`-`, parentheses, left-associative `-`, negative results, nesting → `14 20 3 -2 46` |
-| `t2_08_reassign` | mine, runs | initialized declarations and `x = x + x` updates (propagation must track every new value) → `6 5 25` |
-| `t2_09_algebra` | mine, runs | `x*1`, `x*0`, `x+0`, `x-x`, large values → `100000000 7 -100000 100000 0` |
-| `t2_10_errors_redeclared` | mine, fails | duplicate declaration, line 9 |
-| `t2_11_errors_lexical` | mine, fails | `@` and `$` with exact line and column, and the program is **not** certified |
-| `t2_12_errors_unterminated_comment` | mine, fails | `/*` never closed, reported where it starts (line 9, col 1) |
-| `t2_13_errors_reserved` | mine, fails | `int t1;` is reserved, and only one error is reported (no cascade) |
-| `t2_14_errors_use_before_decl` | mine, fails | assignment before declaration plus a never-declared name: both reported |
+**Differential testing.** A random-program generator produced 500 programs using
+functions, arrays, recursion, `if`, blocks and mixed operators. Each ran through
+this compiler in all four optimization modes, and through `gcc`, and every output
+matched.
 
-**Unit tests** (`tests/unit/`): 10 cases for the TAC optimizer, covering
-every flow rule plus the safety rules, and 18 for the peephole pass.
+**Class activities.** The programs from activity 1 (precedence), activity 3
+(`addUp`), activity 5 (scope and shadowing) and the lecture notes' forward-call
+example all give the expected results. Activities 1 and 5 are permanent tests.
 
-Current result: **50 / 50 passing** (10 + 18 unit cases, 22 regression runs).
+**Previous topics' tests still pass.** All Project 2 programs (`t2_01`–`t2_14`,
+`ast_demo`) are unchanged and run in every `make test`.
+
+**Regression tests** (`tests/run_tests.sh`). For each `tests/NAME.cm`:
+`tests/expected/NAME.out` holds the output SPIM must print, or
+`tests/expected/NAME.err` holds the exact messages the compiler must produce.
+Programs that compile run **twice**, optimized and with `-O0 -nopeep`, because
+an optimizer must never change a program's output. The `.out` files for the
+`t3_*` tests come from the hand-worked values in each file's header comment, not
+from the compiler's own output.
+
+| Test | Checks |
+|------|--------|
+| `t3_01`–`t3_05` | Supplied: arithmetic, globals, arrays, functions, scope |
+| `t3_06_recursion` | `fact`, `fib` (two calls in one expression), mutual recursion |
+| `t3_07_nested_calls` | `f(1, g(2))`, `f(g(1), 2)`, argument order, a local surviving calls |
+| `t3_08_activation_records` | A callee can't disturb its caller; early `return` doesn't fall through |
+| `t3_09_arrays` | Reads and writes, by-reference, passing a parameter on, calls in subscripts |
+| `t3_10_math` | Run-time values that differ under wrong precedence or associativity |
+| `t3_11_scope` | Nested and sibling blocks, a global used before a same-named local |
+| `t3_12_namespaces` | A variable and function with one name, `add` as a function name |
+| `t3_13_if_flow` | Dangling else, every comparison, flow optimizer output |
+| `t3_14_void` | `void` functions, `return;`, a discarded result |
+| `t3_15_register_pressure` | Regressions for the temporary and register-cache bugs |
+| `t3_16_programs` | Recursive sum, max, selection sort, gcd, power |
+| `t3_17_comparisons` | The two comparison precedence levels, on run-time values |
+| `t3_18_large_frames` | Frames past the 16-bit offset limit, large arrays in recursion |
+| `t3_19_limits` | Identifiers over 63 characters, 32-bit wraparound, deep nesting |
+| `t3_20`–`t3_32` | Every error in section 4, plus syntax errors and reserved keywords |
+| `t3_33`, `t3_34` | The programs from class activities 5 and 1 |
+
+**Unit tests** (`tests/unit/`): 18 for the TAC optimizer and 21 for the peephole
+pass, on hand-built input the language can't produce, including cases where a
+rule must **not** fire.
 
 ---
 
-## 6. CST-405 Compiler Design Checklist
+## 10. CST-405 Compiler Design Checklist
 
 | Checklist item | Where |
 |----------------|-------|
-| Lexical analyzer | `scanner.l` (Project 1 token set, plus error counting and unterminated comments) |
+| Lexical analyzer | `scanner.l` |
 | Syntax analyzer: scans tokens, verifies the grammar | `parser.y` (Bison LALR(1)) |
-| Symbol table | `symtab.c` / `symtab.h` |
-| Parse tree creation functions and display | `ast.c` constructors and `printAST`, shown in the Phase 2 trace |
+| Symbol table | `symtab.c` (storage), scope stack in `semantic.c` (visibility) |
+| Parse tree creation functions and display | `ast.c` constructors and `printAST`, shown in the trace |
 | AST functions in a separate file | `ast.c` / `ast.h` |
-| Syntax errors with location | error productions in `parser.y`: line, column and a caret (`t2_05`, `t2_06`) |
-| Certifies correct code when there are no lexical or syntax errors | `main.c`: "✓ Parse succeeded — no lexical or syntax errors" |
-| Semantic analyzer traverses the AST (separate file) | `semantic.c` |
-| Semantic errors with location | undeclared, duplicate and reserved (`t2_04`, `t2_10`, `t2_13`, `t2_14`) |
-| Certifies semantic correctness | "✓ Semantic analysis passed - program is semantically correct!" |
+| Syntax errors with location | Error productions in `parser.y`: line, column and a caret |
+| Certifies correct code when there are no lexical or syntax errors | `main.c`: "✓ Parse succeeded" |
+| Semantic analyzer traverses the AST (separate file) | `semantic.c`, two passes |
+| Semantic errors with location | Every check in section 4 |
+| Certifies semantic correctness | "✓ Semantic analysis passed" |
 | Generates 3-address code | `tac.c` `generateTAC` |
-| Saves IR to a file | `<output>.tac` and `<output>.optimized.tac` |
-| Flow optimization | `tac.c` `flowPass`: branch simplification, jump threading, jump-to-next, unreachable code |
-| Peephole optimization | `peephole.c`, run on the generated MIPS |
-| Other optimizations | constant folding, constant and copy propagation, algebraic simplification, dead code and dead store elimination |
+| Saves IR to a file | `<output>.tac`, `<output>.optimized.tac` |
+| Flow optimization | `tac.c` `flowPass`; see `t3_13` |
+| Peephole optimization | `peephole.c` |
+| Other optimizations | Folding, propagation, algebraic, dead code, dead stores |
 | Code generator: MIPS for SPIM/QtSPIM (separate file) | `codegen.c` |
 | Saves the assembly to a file | `<output>.s` |
 
 ---
 
-## 7. Project layout
+## 11. Project layout
 
 ```
 compiler/
   scanner.l            Phase 1   tokens, lexical errors
   parser.y             Phase 2   grammar, AST-building actions, syntax errors
   ast.c / ast.h        Phase 2   AST node constructors and printer
-  semantic.c / .h      Phase 3   scope stack, semantic checks
-  symtab.c / .h        Phase 3/6 name -> storage location
+  semantic.c / .h      Phase 3   scope stack, two-pass semantic checks
   tac.c / tac.h        Phase 4/5 AST -> TAC, optimizer (value + flow passes)
-  codegen.c / .h       Phase 6   TAC -> MIPS, register cache, frame layout
+  codegen.c / .h       Phase 6   TAC -> MIPS, register cache, frames, calls
+  symtab.c / .h        Phase 6   name -> storage location
   peephole.c / .h      Phase 6   peephole optimizer over the MIPS
   main.c                         the six-phase driver
   trace.h                        trace() helper (silenced by -q)
-  Makefile                       make / make test / make unittest / make check / make clean
+  Makefile                       make / test / unittest / check / clean
   tests/*.cm                     test programs
-  tests/expected/                expected output (.out) or errors (.err) for each
+  tests/expected/                expected output (.out) or errors (.err)
   tests/run_tests.sh             regression runner
   tests/unit/                    optimizer and peephole unit tests
 screenshots/                     AST tree and terminal output
 ```
 
-## 8. Credits
+## 12. Credits
 
 The course starter code supplied the headers, the reference scanner, the
-`parser.y` prologue, the TAC list and temporary-allocation machinery, Parts
-1–3 of `codegen.c` (register cache, addressing, frame layout) and the
-`main.c` driver. Everything else is my own work: the grammar rules and AST
-actions, the AST constructors and printer, symbol table insert and lookup, the
-semantic checks, AST → TAC translation, the optimizer (including dead store
-elimination and the flow pass), MIPS instruction selection, the peephole
-optimizer, the lexical-error handling, and every test beyond the six supplied
-ones. Each source file's header comment lists its credits.
+`parser.y` prologue, the TAC list and temporary-allocation machinery, Parts 1–3
+of `codegen.c` (register cache, addressing, frame layout), the `main.c` driver,
+and tests `t2_01`–`t2_06` and `t3_01`–`t3_05`. Everything else is my own work.
+Each source file's header comment lists its credits.
