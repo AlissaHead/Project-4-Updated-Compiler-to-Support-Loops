@@ -1,19 +1,24 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: codegen.c   —   Phase 6 — MIPS code generation
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                                  ^^^^^^^  this file
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • TAC -> MIPS: a register cache over memory homes, and syscalls for print
- *   • The finished assembly goes through the peephole pass (peephole.c)
- *     before it is saved to the .s file
+ * PHASE
+ *   Phase 6, MIPS code generation.
+ *
+ * RECEIVES
+ *   The optimized TAC from Phase 5.
+ *
+ * PRODUCES
+ *   A MIPS assembly file for SPIM, after the peephole pass in peephole.c.
  *
  * CREDITS
  *   Parts 1-3 (register cache, addressing, frame layout) from the CST-405 course starter code.
- *   Part 4 (instruction selection) and Part 5 (peephole hookup): Alissa Head.
+ *   Array addressing, instruction selection, the calling sequence and
+ *   the peephole hookup: Alissa Head.
  * ========================================================================= */
 
 /* ============================================================================
@@ -43,6 +48,10 @@
 static FILE* out;                 /* The .s file being written              */
 RegisterAllocator regAlloc;       /* The $t0-$t9 cache                      */
 
+
+/* The register-clock value when the current TAC instruction began.  Anything
+ * used since then is an operand of that instruction: see selectVictimReg. */
+static int instrStart = 0;
 
 static int frameSize  = 0;        /* Size of the frame being generated       */
 static const char* currentFunc = NULL;
@@ -124,6 +133,8 @@ static int isTemp(const char* s) {
 static void emitStoreHome(int reg, const char* name);
 static void emitLoadHome(int reg, const char* name);
 
+/* Start a function with an empty cache.  The spill and load counts keep
+ * running, because the report at the end covers the whole program. */
 void initRegAlloc(void) {
     for (int i = 0; i < NUM_TEMP_REGS; i++) {
         regAlloc.regs[i].varName[0] = '\0';
@@ -132,9 +143,8 @@ void initRegAlloc(void) {
         regAlloc.regs[i].hasHome    = 0;
         regAlloc.regs[i].lastUsed   = 0;
     }
-    regAlloc.timestamp  = 0;
-    regAlloc.spillCount = 0;
-    regAlloc.loadCount  = 0;
+    regAlloc.timestamp = 0;
+    instrStart = 0;
 }
 
 /* Which register currently caches `name`?  -1 if none. */
@@ -152,11 +162,16 @@ static int findVarReg(const char* name) {
  * to lose.  A real compiler would use liveness information here; LRU is a
  * good approximation and is easy to reason about. */
 static int selectVictimReg(void) {
-    int victim = 0, oldest = regAlloc.regs[0].lastUsed;
-    for (int i = 1; i < NUM_TEMP_REGS; i++) {
+    int victim = -1, oldest = 0;
+    for (int i = 0; i < NUM_TEMP_REGS; i++) {
+        /* A register touched by the instruction being generated is holding
+         * one of its operands, and evicting it would corrupt that very
+         * instruction.  One instruction uses far fewer than ten registers,
+         * so a victim always exists. */
+        if (regAlloc.regs[i].lastUsed > instrStart) continue;
         /* Values with no memory home are the cheapest to discard */
         if (!regAlloc.regs[i].hasHome && regAlloc.regs[i].inUse) return i;
-        if (regAlloc.regs[i].lastUsed < oldest) {
+        if (victim == -1 || regAlloc.regs[i].lastUsed < oldest) {
             oldest = regAlloc.regs[i].lastUsed;
             victim = i;
         }
@@ -261,6 +276,21 @@ void printRegAllocStats(void) {
  * instruction cases in PART 4 never have to think about it.
  * ========================================================================*/
 
+/* Emit `lw` or `sw` of register `reg` at `offset` bytes into the frame.  An
+ * offset over 32767 does not fit the instruction's 16-bit field, and SPIM
+ * miscompiles such an operand rather than rejecting it, so the address is
+ * computed in $v1 first.  $v1 is free: this compiler uses it for nothing else,
+ * and it never holds a value across an instruction. */
+static void emitFrameAccess(const char* op, const char* reg, int offset, const char* note) {
+    if (offset <= 32767) {
+        fprintf(out, "    %s   %s, %d($sp)        # %s\n", op, reg, offset, note);
+    } else {
+        fprintf(out, "    li   $v1, %d\n", offset);
+        fprintf(out, "    add  $v1, $v1, $sp\n");
+        fprintf(out, "    %s   %s, 0($v1)        # %s\n", op, reg, note);
+    }
+}
+
 static void emitLoadHome(int reg, const char* name) {
     Symbol* s = lookupSymbol(name);
     if (!s) {
@@ -270,7 +300,11 @@ static void emitLoadHome(int reg, const char* name) {
         exit(1);
     }
     if (s->isGlobal) fprintf(out, "    lw   $t%d, %s\n", reg, dataLabel(s->name));
-    else             fprintf(out, "    lw   $t%d, %d($sp)        # %s\n", reg, s->offset, s->name);
+    else {
+        char r[8];
+        snprintf(r, sizeof r, "$t%d", reg);
+        emitFrameAccess("lw", r, s->offset, s->name);
+    }
 }
 
 static void emitStoreHome(int reg, const char* name) {
@@ -282,7 +316,62 @@ static void emitStoreHome(int reg, const char* name) {
         exit(1);
     }
     if (s->isGlobal) fprintf(out, "    sw   $t%d, %s\n", reg, dataLabel(s->name));
-    else             fprintf(out, "    sw   $t%d, %d($sp)        # %s\n", reg, s->offset, s->name);
+    else {
+        char r[8];
+        snprintf(r, sizeof r, "$t%d", reg);
+        emitFrameAccess("sw", r, s->offset, s->name);
+    }
+}
+
+/* Copy the base address of a declared array (not an array parameter) into
+ * register `reg`, which may be an $a register when passing it to a function.
+ * Where the base comes from is the only real difference between the two:
+ *   global   la   $t, g_name      the elements are at a label in .data
+ *   local    addi $t, $sp, off    the elements are in this frame            */
+static void emitArrayBase(const char* reg, Symbol* s) {
+    if (s->isGlobal) {
+        fprintf(out, "    la   %s, %s\n", reg, dataLabel(s->name));
+    } else if (s->offset <= 32767) {
+        fprintf(out, "    addi %s, $sp, %d        # base of %s\n", reg, s->offset, s->name);
+    } else {
+        /* The offset doesn't fit addi's 16-bit immediate. */
+        fprintf(out, "    li   %s, %d\n", reg, s->offset);
+        fprintf(out, "    add  %s, %s, $sp        # base of %s\n", reg, reg, s->name);
+    }
+}
+
+/* Return a register holding the address of array[index].  The third kind of
+ * array, a parameter, is different: its slot holds someone ELSE'S base
+ * address, so its base is simply the slot's VALUE and ensureReg finds it.
+ *
+ * The element address is base + index*4.  The multiply is a shift, because
+ * the element width is a power of two.  The caller gives the register back
+ * with releaseReg once the load or store has been written. */
+static int elementAddrReg(const char* array, const char* index) {
+    Symbol* s = lookupSymbol(array);
+    if (!s) {
+        fprintf(stderr, "codegen: array '%s' has no storage assigned\n", array);
+        exit(1);
+    }
+
+    int i = operandReg(index);
+    int base, scratchBase = 0;
+    if (s->isParamArray) {
+        base = ensureReg(array);
+    } else {
+        char reg[8];
+        base = getReg("#base", 0, 0);
+        scratchBase = 1;
+        snprintf(reg, sizeof reg, "$t%d", base);
+        emitArrayBase(reg, s);
+    }
+
+    int addr = getReg("#addr", 0, 0);
+    fprintf(out, "    sll  $t%d, $t%d, 2\n", addr, i);
+    fprintf(out, "    add  $t%d, $t%d, $t%d      # address of %s[%s]\n",
+            addr, addr, base, array, index);
+    if (scratchBase) releaseReg(base);
+    return addr;
 }
 
 /* ==========================================================================
@@ -334,17 +423,30 @@ static int layoutFrame(TACInstr* funcBegin) {
     return size;
 }
 
+/* Move the stack pointer by `delta` bytes.  `addi` holds only a 16-bit
+ * immediate, and a frame with a large local array can exceed that, so a big
+ * frame goes through $v1, the one register this compiler never otherwise uses.
+ * ($v0 can't be used: in an epilogue it holds the return value.) */
+static void emitAdjustSp(int delta, const char* why) {
+    if (delta >= -32768 && delta <= 32767) {
+        fprintf(out, "    addi $sp, $sp, %d        # %s\n", delta, why);
+    } else {
+        fprintf(out, "    li   $v1, %d\n", delta);
+        fprintf(out, "    add  $sp, $sp, $v1        # %s\n", why);
+    }
+}
+
 static void emitPrologue(const char* name, int size) {
     fprintf(out, "\n# ==== function %s ====\n", name);
     fprintf(out, "%s:\n", funcLabel(name));
-    fprintf(out, "    addi $sp, $sp, -%d        # build activation record\n", size);
-    fprintf(out, "    sw   $ra, %d($sp)        # save return address\n", size - 4);
+    emitAdjustSp(-size, "build activation record");
+    emitFrameAccess("sw", "$ra", size - 4, "save return address");
 }
 
 static void emitEpilogue(const char* name, int size) {
     fprintf(out, "%s__epilogue:\n", funcLabel(name));
-    fprintf(out, "    lw   $ra, %d($sp)        # restore return address\n", size - 4);
-    fprintf(out, "    addi $sp, $sp, %d        # discard activation record\n", size);
+    emitFrameAccess("lw", "$ra", size - 4, "restore return address");
+    emitAdjustSp(size, "discard activation record");
     if (strcmp(name, "main") == 0) {
         fprintf(out, "    li   $v0, 10             # syscall 10 = exit\n");
         fprintf(out, "    syscall\n");
@@ -362,11 +464,37 @@ static void emitEpilogue(const char* name, int size) {
  * slt, sgt, sle, sge, seq, sne), expanding them to real instructions. */
 static const char* mnemonicFor(TACOp op) {
     switch (op) {
-        case TAC_ADD: return "add";
-        case TAC_SUB: return "sub";
+        /* addu and subu, not add and sub: the signed forms TRAP on overflow.
+         * The optimizer folds constants with 32-bit wraparound, so wrapping
+         * here too means optimized and unoptimized builds agree. */
+        case TAC_ADD: return "addu";
+        case TAC_SUB: return "subu";
         case TAC_MUL: return "mul";
         case TAC_DIV: return "div";
+        case TAC_LT:  return "slt";
+        case TAC_GT:  return "sgt";
+        case TAC_LE:  return "sle";
+        case TAC_GE:  return "sge";
+        case TAC_EQ:  return "seq";
+        case TAC_NE:  return "sne";
         default:      return NULL;
+    }
+}
+
+/* The source operator, for the comments in the .s file */
+static const char* symbolFor(TACOp op) {
+    switch (op) {
+        case TAC_ADD: return "+";
+        case TAC_SUB: return "-";
+        case TAC_MUL: return "*";
+        case TAC_DIV: return "/";
+        case TAC_LT:  return "<";
+        case TAC_GT:  return ">";
+        case TAC_LE:  return "<=";
+        case TAC_GE:  return ">=";
+        case TAC_EQ:  return "==";
+        case TAC_NE:  return "!=";
+        default:      return "?";
     }
 }
 
@@ -394,6 +522,9 @@ static void emitDataSection(TACInstr* head) {
         } else if (c->op == TAC_ARRAY_DECL) {
             int n = atoi(c->arg1);
             addGlobalArray(c->result, n);
+            /* Limitation: SPIM's default data segment is 64 KB, and an element
+             * beyond that faults at run time, in hand-written assembly too.
+             * Local arrays have no such limit: the stack grows on demand. */
             fprintf(out, ".align 2\n%s: .space %d          # int %s[%d]\n",
                     dataLabel(c->result), n * 4, c->result, n);
         }
@@ -458,6 +589,8 @@ void generateMIPSFromTAC(const char* filename) {
     out = tmpfile();
     if (!out) { fprintf(stderr, "Cannot create a temporary file for %s\n", filename); exit(1); }
 
+    regAlloc.spillCount = 0;
+    regAlloc.loadCount  = 0;
     initRegAlloc();
 
     TACList* tac = getOptimizedTAC();
@@ -483,8 +616,122 @@ void generateMIPSFromTAC(const char* filename) {
 
         emitPrologue(currentFunc, frameSize);
 
+        int paramIndex = 0;     /* Which $a register the next PARAM arrived in */
+        int argIndex   = 0;     /* Which $a register the next ARG goes into    */
+
         for (TACInstr* i = c->next; i && i->op != TAC_FUNC_END; i = i->next) {
+            instrStart = regAlloc.timestamp;
+
             switch (i->op) {
+
+                case TAC_PARAM: {
+                    /* Copy the argument into its frame slot straight away:
+                     * $a0-$a3 are needed again the moment this function
+                     * prints or calls anything. */
+                    Symbol* s = lookupSymbol(i->result);
+                    char reg[8], note[MAX_VAR_NAME + 16];
+                    snprintf(reg, sizeof reg, "$a%d", paramIndex++);
+                    snprintf(note, sizeof note, "parameter %s", i->result);
+                    emitFrameAccess("sw", reg, s->offset, note);
+                    break;
+                }
+
+                case TAC_ARRAY_DECL: {
+                    /* No instruction: layoutFrame() reserved the elements. */
+                    Symbol* s = lookupSymbol(i->result);
+                    fprintf(out, "    # int %s[%s] lives at %d($sp)\n",
+                            i->result, i->arg1, s ? s->offset : -1);
+                    break;
+                }
+
+                case TAC_ARRAY_LOAD: {
+                    int addr = elementAddrReg(i->arg1, i->arg2);
+                    int d    = defReg(i->result);
+                    fprintf(out, "    lw   $t%d, 0($t%d)        # %s = %s[%s]\n",
+                            d, addr, i->result, i->arg1, i->arg2);
+                    releaseReg(addr);
+                    break;
+                }
+
+                case TAC_ARRAY_STORE: {
+                    /* The value is in `result`, the one field here that is
+                     * read rather than written. */
+                    int v    = operandReg(i->result);
+                    int addr = elementAddrReg(i->arg1, i->arg2);
+                    fprintf(out, "    sw   $t%d, 0($t%d)        # %s[%s] = %s\n",
+                            v, addr, i->arg1, i->arg2, i->result);
+                    releaseReg(addr);
+                    break;
+                }
+
+                case TAC_ARG: {
+                    /* Fill $a0-$a3 while the $t registers are still valid.
+                     * The flush happens at the CALL, after all of these.
+                     * Doing it first would forget where the values are.
+                     * An array argument is its base ADDRESS, never its
+                     * contents.  An array parameter passed along already
+                     * holds an address, so it is an ordinary value here. */
+                    Symbol* s = isConstant(i->arg1) ? NULL : lookupSymbol(i->arg1);
+                    char reg[8];
+                    snprintf(reg, sizeof reg, "$a%d", argIndex++);
+                    if (s && s->isArray && !s->isParamArray) {
+                        emitArrayBase(reg, s);
+                    } else if (isConstant(i->arg1)) {
+                        fprintf(out, "    li   %s, %s\n", reg, i->arg1);
+                    } else {
+                        fprintf(out, "    move %s, $t%d          # argument %s\n",
+                                reg, ensureReg(i->arg1), i->arg1);
+                    }
+                    break;
+                }
+
+                case TAC_CALL: {
+                    /* $t0-$t9 are caller-saved: the callee may destroy every
+                     * one of them, including in its own recursive calls.  So
+                     * everything live goes back to THIS frame before the jal,
+                     * and the cache starts empty afterwards. */
+                    flushRegisters("before call");
+                    fprintf(out, "    jal  %s\n", funcLabel(i->arg1));
+                    argIndex = 0;
+                    if (i->result) {
+                        int d = defReg(i->result);
+                        fprintf(out, "    move $t%d, $v0          # %s = return value\n",
+                                d, i->result);
+                    }
+                    break;
+                }
+
+                case TAC_LABEL:
+                    /* Control can arrive here from elsewhere, with a different
+                     * idea of what the registers hold.  Memory is the one
+                     * thing every path agrees on. */
+                    flushRegisters("before label");
+                    fprintf(out, "%s:\n", i->result);
+                    break;
+
+                case TAC_GOTO:
+                    flushRegisters("before jump");
+                    fprintf(out, "    j    %s\n", i->arg1);
+                    break;
+
+                case TAC_IF_FALSE:
+                case TAC_IF_TRUE: {
+                    /* Read the condition first, flush second: flushing frees
+                     * the cache entry but leaves the value in the register. */
+                    int a = operandReg(i->arg1);
+                    flushRegisters("before branch");
+                    fprintf(out, "    %s $t%d, %s\n",
+                            i->op == TAC_IF_FALSE ? "beqz" : "bnez", a, i->arg2);
+                    break;
+                }
+
+                case TAC_NEG: {
+                    int a = operandReg(i->arg1);
+                    int d = defReg(i->result);
+                    fprintf(out, "    subu $t%d, $zero, $t%d      # %s = -%s\n",
+                            d, a, i->result, i->arg1);
+                    break;
+                }
 
                 case TAC_DECL: {
                     /* No instruction: layoutFrame() already reserved the slot.
@@ -513,17 +760,17 @@ void generateMIPSFromTAC(const char* filename) {
                     break;
                 }
 
-                case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV: {
+                case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV:
+                case TAC_LT:  case TAC_GT:  case TAC_LE:  case TAC_GE:
+                case TAC_EQ:  case TAC_NE: {
                     int a = operandReg(i->arg1);
                     int b = operandReg(i->arg2);
                     int d = defReg(i->result);
                     /* the comment repeats the TAC instruction, with the
                      * source operator, so the .s file reads against the .tac */
-                    const char* sym = i->op == TAC_ADD ? "+" : i->op == TAC_SUB ? "-"
-                                    : i->op == TAC_MUL ? "*" : "/";
                     fprintf(out, "    %-4s $t%d, $t%d, $t%d      # %s = %s %s %s\n",
                             mnemonicFor(i->op), d, a, b,
-                            i->result, i->arg1, sym, i->arg2);
+                            i->result, i->arg1, symbolFor(i->op), i->arg2);
                     break;
                 }
 
@@ -565,14 +812,17 @@ void generateMIPSFromTAC(const char* filename) {
                     flushRegisters("globals before return");
                     /* Falling through is correct when this is the last
                      * instruction: the epilogue label is the very next line. */
-                    if (i->next && i->next->op != TAC_FUNC_END)
+                    if (i->next && i->next->op != TAC_FUNC_END) {
+                        /* A return in the middle of a function must skip what
+                         * follows, and the epilogue is the only place that
+                         * restores $ra and pops the frame. */
                         fprintf(out, "    j    %s__epilogue\n", funcLabel(currentFunc));
+                    }
                     break;
                 }
 
                 default:
-                    /* Everything else (control flow, calls, arrays, ...) is
-                     * lowered starting in Topic 3/4. */
+                    /* Logical operators are not part of this language yet. */
                     fprintf(out, "    # TAC opcode %d not yet lowered (later topic)\n", i->op);
                     break;
             }

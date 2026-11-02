@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: peephole.c   —   Phase 6b — peephole optimization of MIPS assembly
  * -------------------------------------------------------------------------
  * codegen.c writes the assembly for a whole program into a temporary file,
@@ -50,7 +50,7 @@ typedef enum { K_BLANK, K_LABEL, K_DIRECTIVE, K_INSTR } LineKind;
 typedef struct {
     LineKind kind;
     char op[16];          /* mnemonic, or the label name for K_LABEL        */
-    char arg[3][64];      /* operands, trimmed                              */
+    char arg[3][320];     /* operands, trimmed (identifiers can be long)    */
     int  nargs;
 } Ins;
 
@@ -75,7 +75,7 @@ static void trim(char* s) {
 }
 
 static void parseLine(const char* line, Ins* ins) {
-    char buf[256];
+    char buf[512];
     memset(ins, 0, sizeof *ins);
     stripComment(line, buf, sizeof buf);
     trim(buf);
@@ -92,7 +92,7 @@ static void parseLine(const char* line, Ins* ins) {
             *colon = '\0';
             snprintf(ins->op, sizeof ins->op, "%.15s", buf);
             /* labels can be longer than op[]; keep the full name in arg[0] */
-            snprintf(ins->arg[0], sizeof ins->arg[0], "%.63s", buf);
+            snprintf(ins->arg[0], sizeof ins->arg[0], "%.319s", buf);
         } else {
             ins->kind = K_DIRECTIVE;
         }
@@ -127,7 +127,7 @@ static int opIn(const char* op, const char* const* set) {
 
 static const char* const THREE_REG[] = { "add", "addu", "sub", "subu", "mul", "div",
     "and", "or", "xor", "nor", "slt", "sgt", "sle", "sge", "seq", "sne", NULL };
-static const char* const REG_IMM[]   = { "addi", "addiu", "andi", "ori", "xori", "slti", NULL };
+static const char* const REG_IMM[]   = { "addi", "addiu", "andi", "ori", "xori", "slti", "sll", NULL };
 static const char* const BRANCHES[]  = { "b", "beq", "bne", "beqz", "bnez", "blt", "bgt",
     "ble", "bge", "bltz", "bgtz", "blez", "bgez", NULL };
 
@@ -298,7 +298,7 @@ static int sweep(char** lines, int n, PeepStats* st) {
             if (!strcmp(a.arg[0], b.arg[0])) {
                 deleteLine(lines, j);
             } else {
-                char text[512];
+                char text[2048];
                 snprintf(text, sizeof text,
                          "    move %s, %s          # peephole: was lw %s, %s",
                          b.arg[0], a.arg[0], b.arg[0], b.arg[1]);
@@ -308,10 +308,13 @@ static int sweep(char** lines, int n, PeepStats* st) {
             continue;
         }
 
-        /* lw R, A ; sw R, A  — memory already holds that value */
+        /* lw R, A ; sw R, A  — memory already holds that value.  Not when A
+         * is based on R itself: in  lw $t1, 0($t1)  the load changes where
+         * the store goes, so the two addresses only LOOK the same. */
         if (j >= 0 && !strcmp(a.op, "lw") && !strcmp(b.op, "sw") &&
             a.nargs == 2 && b.nargs == 2 &&
-            !strcmp(a.arg[0], b.arg[0]) && !strcmp(a.arg[1], b.arg[1])) {
+            !strcmp(a.arg[0], b.arg[0]) && !strcmp(a.arg[1], b.arg[1]) &&
+            !mentions(a.arg[1], a.arg[0])) {
             deleteLine(lines, j); st->loadStore++; changes++;
             continue;
         }
@@ -339,7 +342,7 @@ static int sweep(char** lines, int n, PeepStats* st) {
                     if (t.kind == K_BLANK || t.kind == K_LABEL) continue;
                     if (t.kind == K_INSTR && !strcmp(t.op, "j") && t.nargs == 1 &&
                         strcmp(t.arg[0], a.arg[0]) != 0) {
-                        char text[512];
+                        char text[2048];
                         snprintf(text, sizeof text,
                                  "    j    %s          # peephole: threaded past %s",
                                  t.arg[0], a.arg[0]);

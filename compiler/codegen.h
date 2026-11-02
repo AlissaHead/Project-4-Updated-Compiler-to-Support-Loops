@@ -1,13 +1,22 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: codegen.h   —   Phase 6 — MIPS code generation
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                                  ^^^^^^^  this file
  *
+ * PHASE
+ *   Phase 6, MIPS code generation.
+ *
+ * RECEIVES
+ *   Nothing: this is the interface of codegen.c.
+ *
+ * PRODUCES
+ *   generateMIPSFromTAC, and the design of the activation record.
+ *
  * CREDITS
- *   Interface from the CST-405 course starter code; peephole hooks added by Alissa Head.
+ *   Interface from the CST-405 course starter code; peephole hooks: Alissa Head.
  * ========================================================================= */
 
 #ifndef CODEGEN_H
@@ -62,7 +71,7 @@
  * ==========================================================================*/
 
 #define NUM_TEMP_REGS 10   /* $t0 - $t9                                     */
-#define MAX_VAR_NAME  64
+#define MAX_VAR_NAME  256  /* Must exceed any identifier we expect to see */
 #define MAX_ARGS      4    /* $a0-$a3; more than this is a reported error   */
 
 /* ---------------------------------------------------------------------------

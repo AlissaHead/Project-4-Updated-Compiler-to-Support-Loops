@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: peephole.h   —   Phase 6b — peephole optimization of MIPS assembly
  * -------------------------------------------------------------------------
  * PIPELINE
@@ -10,6 +10,9 @@
  * INPUT : the MIPS assembly codegen.c produced, one line per array element
  * OUTPUT: the same array, rewritten in place, with redundant instructions
  *         removed; the number of lines that remain is returned
+ *
+ * CREDITS
+ *   Alissa Head.
  *
  * A peephole optimizer slides a small "window" over the final instructions
  * and replaces patterns it recognises with something shorter.  It knows
