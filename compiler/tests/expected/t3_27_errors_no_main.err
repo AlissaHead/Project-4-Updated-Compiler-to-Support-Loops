@@ -1,0 +1,7 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Missing Main                              ║
+╚════════════════════════════════════════════════════════════╝
+  ❌ Error: The program defines functions but no 'main'
+  💡 Suggestion: add: int main() { ... }
+

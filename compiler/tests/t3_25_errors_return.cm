@@ -1,0 +1,10 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected:
+ *   line 7  a void function returning a value
+ *   line 8  an int function returning nothing
+ *   line 9  using the result of a void function */
+void v() { }
+void bad1() { return 1; }
+int bad2() { return; }
+int bad3() { return v(); }
+int main() { return 0; }

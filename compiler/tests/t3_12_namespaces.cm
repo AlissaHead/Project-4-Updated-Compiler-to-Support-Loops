@@ -1,0 +1,21 @@
+/* Expected output: 3  8  42
+ * Two-pass analysis and separate namespaces.
+ *   main calls later() above its definition.
+ *   `total` is both a global variable and a function, which is legal because
+ *   variables and functions are separate namespaces.  Constant propagation
+ *   must not rewrite the function name in a call just because a variable of
+ *   the same spelling has a known value.
+ *   add is a MIPS mnemonic, so an unmangled label would break the assembler. */
+int total;
+
+int main() {
+    total = 3;
+    print(total);
+    print(later(5));
+    print(add(40, 2));
+    return 0;
+}
+
+int later(int n) { return total(n) + total; }
+int total(int n) { return n; }
+int add(int a, int b) { return a + b; }

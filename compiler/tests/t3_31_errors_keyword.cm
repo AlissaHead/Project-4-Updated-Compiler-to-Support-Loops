@@ -1,0 +1,5 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * `while` is reserved for a later milestone, so it cannot name a variable.
+ * Expected: a syntax error on line 4 that names 'while'. */
+int while;
+int main() { return 0; }

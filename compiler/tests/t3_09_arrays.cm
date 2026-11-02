@@ -1,0 +1,47 @@
+/* Expected output: 11  12  13  36  99  99  36  7  5
+ * Element access on both sides of an assignment, in global and local arrays,
+ * passed by reference.
+ *   fill sets a[0..2] = 10 11 12 through the parameter.
+ *   a[i] = a[j] + 1 style updates turn g into 11 12 13; their sum is 36.
+ *   setFirst writes through a parameter, so the CALLER's array changes (99).
+ *   forward passes an array parameter on to another function.
+ *   Calls inside subscripts: l[pick(1)] = l[1] = 7.
+ *   The scalar `after` sits next to array l in the frame and must stay 5. */
+int g[3];
+
+int fill(int a[], int base) {
+    a[0] = base;
+    a[1] = base + 1;
+    a[2] = base + 2;
+    return 0;
+}
+
+int sum3(int a[]) { return a[0] + a[1] + a[2]; }
+int forward(int a[]) { return sum3(a); }
+int setFirst(int a[], int v) { a[0] = v; return a[0]; }
+int pick(int i) { return i; }
+
+int main() {
+    int l[3];
+    int after;
+    int i;
+    int j;
+    after = 5;
+    fill(g, 10);
+    i = 0;
+    j = 1;
+    g[i] = g[i] + 1;
+    g[j] = g[j] + 1 + i + 1 - 1;
+    g[j + 1] = g[j] + 1;
+    print(g[0]);
+    print(g[1]);
+    print(g[2]);
+    print(forward(g));
+    print(setFirst(l, 99));
+    print(l[0]);
+    print(sum3(g));
+    l[pick(1)] = 7;
+    print(l[pick(1)]);
+    print(after);
+    return 0;
+}

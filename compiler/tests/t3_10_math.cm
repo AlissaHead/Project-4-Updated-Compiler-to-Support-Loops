@@ -1,0 +1,32 @@
+/* Expected output: 14  -1  7  9  -6  10  -3  2  26  1
+ * Every value here differs under wrong precedence or associativity, and the
+ * operands are parameters, so the machine really does the work at run time
+ * instead of the optimizer folding it.  With a=2 b=3 c=4:
+ *   a + b * c           = 14       (wrong: 20)
+ *   a - b - c + 4       = -1       (right-assoc '-': 7)
+ *   100 / 7 / 2         = 7        (right-assoc '/': 33)
+ *   10 / 3 * 3          = 9        (right-assoc: 10)
+ *   -a * b              = -6
+ *   7 - -b              = 10
+ *   -7 / 2              = -3       (integer division truncates toward zero)
+ *   -(a - c)            = 2
+ *   (a + b) * (c + 1) + 1 = 26
+ *   a * b / 6           = 1 */
+int calc(int a, int b, int c) {
+    print(a + b * c);
+    print(a - b - c + 4);
+    print(100 / (c + 3) / a);
+    print(10 / b * b);
+    print(-a * b);
+    print(7 - -b);
+    print(-(b + c) / a);
+    print(-(a - c));
+    print((a + b) * (c + 1) + 1);
+    print(a * b / 6);
+    return 0;
+}
+
+int main() {
+    calc(2, 3, 4);
+    return 0;
+}

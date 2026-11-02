@@ -1,0 +1,16 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Undeclared Array                          ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: Array 'ghost' is used before being declared
+  💡 Suggestion: declare it first, for example: int name[10];
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Undeclared Function                       ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 8
+  ❌ Error: Function 'missing' is called but never defined
+  💡 Suggestion: define the function, or check the spelling of the call
+

@@ -1,0 +1,8 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: invalid array sizes on lines 4 and 6. */
+int ok[3];
+int none[0];
+int main() {
+    int negative[-3];
+    return 0;
+}

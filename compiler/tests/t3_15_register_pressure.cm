@@ -1,0 +1,35 @@
+/* Expected output: 42  440  55  46
+ * Regression tests for two back-end bugs found while building this milestone.
+ *   Temporary allocator: `total` starts with 't', and an early version of
+ *   freeTemp read it as temporary t0 and freed the temporary holding (a+b).
+ *   (a + b) * (total + c - d) = 6 * 7 = 42
+ *   Register cache: the deeply right-nested expression below keeps more values
+ *   alive than there are $t registers, forcing spills while operands are in
+ *   use.  An early version could evict an operand of the very instruction it
+ *   was generating.  With a..j = 1..10, the first print inside many() is the
+ *   sum of squares plus the plain sum, 385 + 55 = 440; the second is the plain
+ *   sum, 55.  many() then returns 33 from values that survived the pressure,
+ *   and 33 + 13 = 46. */
+int calc(int a, int b, int c, int d) {
+    int total;
+    total = 4;
+    return (a + b) * (total + c - d);
+}
+
+int sq(int n) { return n * n; }
+
+int many(int a, int b, int c, int d) {
+    int e; int f; int g; int h; int i; int j; int k; int l;
+    e = a + 4; f = a + 5; g = a + 6; h = a + 7;
+    i = a + 8; j = a + 9; k = a + 10; l = a + 11;
+    print(a*a + (b*b + (c*c + (d*d + (e*e + (f*f + (g*g + (h*h + (i*i + (j*j +
+          (a + (b + (c + (d + (e + (f + (g + (h + (i + j)))))))))))))))))));
+    print(a + b + c + d + e + f + g + h + i + j);
+    return k + l + a + b + c + d;
+}
+
+int main() {
+    print(calc(2, 4, 5, 2));
+    print(many(1, 2, 3, 4) + 13 - 0 * sq(9));
+    return 0;
+}

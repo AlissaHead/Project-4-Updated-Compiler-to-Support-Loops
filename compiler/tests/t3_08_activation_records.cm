@@ -1,0 +1,37 @@
+/* Expected output: 7  100  5  1  2  3
+ * What the activation record guarantees.
+ *   clobber's locals and array use the same names as main's, and must not
+ *   disturb them: a stays 5, and b[0..2] stay 1 2 3.
+ *   early(3) must take the FIRST return (7).  If return fell through to the
+ *   code after it, every call would give 100 instead.
+ *   early(20) takes the last return (100). */
+int clobber() {
+    int a;
+    int b[3];
+    a = 99;
+    b[0] = 99; b[1] = 99; b[2] = 99;
+    return a + b[1];
+}
+
+int early(int n) {
+    if (n < 10) {
+        return 7;
+        print(999);
+    }
+    return 100;
+}
+
+int main() {
+    int a;
+    int b[3];
+    a = 5;
+    b[0] = 1; b[1] = 2; b[2] = 3;
+    print(early(3));
+    print(early(20));
+    clobber();
+    print(a);
+    print(b[0]);
+    print(b[1]);
+    print(b[2]);
+    return 0;
+}

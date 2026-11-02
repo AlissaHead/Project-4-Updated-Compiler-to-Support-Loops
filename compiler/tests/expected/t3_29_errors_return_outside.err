@@ -1,0 +1,7 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Return Outside Function                   ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 6
+  ❌ Error: 'return' can only appear inside a function
+

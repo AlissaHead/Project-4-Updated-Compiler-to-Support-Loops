@@ -1,0 +1,21 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Return Type Mismatch                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: Function 'bad1' is void and cannot return a value
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Return Type Mismatch                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 8
+  ❌ Error: Function 'bad2' must return an int value
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Void Value Used                           ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 9
+  ❌ Error: Function 'v' is void, so its call has no value to use
+

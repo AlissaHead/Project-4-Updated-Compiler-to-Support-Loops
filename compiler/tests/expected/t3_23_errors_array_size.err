@@ -1,0 +1,16 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Invalid Array Size                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 4
+  ❌ Error: Array 'none' is declared with size 0
+  💡 Suggestion: the size must be a positive integer
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Invalid Array Size                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 6
+  ❌ Error: Array 'negative' is declared with size -3
+  💡 Suggestion: the size must be a positive integer
+

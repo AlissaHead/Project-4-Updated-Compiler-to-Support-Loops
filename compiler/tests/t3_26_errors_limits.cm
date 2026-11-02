@@ -1,0 +1,9 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: too many parameters on line 5 (a fifth argument has no register),
+ * and an executable statement outside any function on line 7, the same rule
+ * that rejects a global initializer on line 8. */
+int f(int a, int b, int c, int d, int e) { return a; }
+int total;
+total = 1;
+int limit = 3;
+int main() { return 0; }

@@ -1,0 +1,18 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: duplicates in the same scope are errors at lines 6, 7 and 12
+ * (a local redeclaring a parameter, and a repeated block local) and a
+ * duplicate function at line 16.  Shadowing in an INNER scope is legal, so
+ * the `int a` on line 10 is not reported. */
+int f(int a) { int a; return a; }
+int b; int b;
+
+int g(int a) {
+    { int a; a = 1; }
+    {
+        int c; int c;
+    }
+    return a;
+}
+int f(int z) { return z; }
+
+int main() { return 0; }

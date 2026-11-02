@@ -1,0 +1,10 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: an undeclared array on line 7 and an undeclared function on
+ * line 8, both reported in one run. */
+int main() {
+    int a;
+    a = 1;
+    ghost[0] = a;
+    print(missing(a));
+    return 0;
+}

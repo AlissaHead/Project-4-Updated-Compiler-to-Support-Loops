@@ -1,9 +1,8 @@
 /* =========================================================================
  * Unit tests for the peephole optimizer (peephole.c)      `make unittest`
  * -------------------------------------------------------------------------
- * The starter language folds almost every program down to constants, so a
- * real .cm file only ever gives the peephole pass one or two chances to act.
- * These tests feed it hand-written MIPS instead, one case per rule, plus the
+ * A real .cm file only reaches some of these patterns under register
+ * pressure, so these tests feed the pass hand-written MIPS instead, one case per rule, plus the
  * cases where it must NOT change anything — those matter just as much,
  * because a peephole rule that fires where it should not silently breaks
  * correct programs.
@@ -148,6 +147,18 @@ int main(void) {
     check("stores are never deleted as dead",
           LINES("sw $t0, g_x", "li $v0, 10", "syscall"),
           LINES("sw $t0, g_x", "li $v0, 10", "syscall"));
+
+    check("load then store through the same register is not a no-op",
+          LINES("lw $t1, 0($t1)", "sw $t1, 0($t1)", "jr $ra"),
+          LINES("lw $t1, 0($t1)", "sw $t1, 0($t1)", "jr $ra"));
+
+    check("a shift into the address register keeps its source live",
+          LINES("li $t0, 3", "sll $t1, $t0, 2", "sw $t2, 0($t1)", "jr $ra"),
+          LINES("li $t0, 3", "sll $t1, $t0, 2", "sw $t2, 0($t1)", "jr $ra"));
+
+    check("a dead shift is removed once its result is overwritten",
+          LINES("sll $t1, $t0, 2", "li $t1, 4", "sw $t1, g_x", "jr $ra"),
+          LINES("li $t1, 4", "sw $t1, g_x", "jr $ra"));
 
     check("a cycle of jumps terminates and is still an infinite loop",
           LINES("L1:", "j L2", "L2:", "j L1"),

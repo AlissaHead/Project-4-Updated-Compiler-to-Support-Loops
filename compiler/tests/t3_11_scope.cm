@@ -1,0 +1,57 @@
+/* Expected output: 1  10  20  30  10  40  50  1  60  2
+ * Three levels of scope, with one name meaning several storage locations.
+ *   nested()'s x (10) shadows the global x (1) from its declaration onward.
+ *   A nested block's x (20), a deeper one (30), and a SIBLING block's x (40)
+ *   are all different variables, and x is 10 again after each closes.
+ *   setGlobal assigns x with no local in sight, so the global changes.
+ *   useBefore prints the global x, THEN declares a local x: the first line of
+ *   that function must still mean the global, even though the two share a
+ *   function (1, then 60).  At the end the global is 2. */
+int x;
+
+int setGlobal(int v) { x = v; return 0; }
+
+int useBefore() {
+    print(x);
+    int x;
+    x = 60;
+    print(x);
+    return 0;
+}
+
+int main() {
+    x = 1;
+    print(x);
+    return nested();
+}
+
+int nested() {
+    int x;
+    x = 10;
+    print(x);
+    {
+        int x;
+        x = 20;
+        print(x);
+        {
+            int x;
+            x = 30;
+            print(x);
+        }
+    }
+    print(x);
+    {
+        int x;
+        x = 40;
+        print(x);
+    }
+    setGlobal(50);
+    showGlobal();
+    setGlobal(1);
+    useBefore();
+    setGlobal(2);
+    showGlobal();
+    return 0;
+}
+
+int showGlobal() { print(x); return 0; }

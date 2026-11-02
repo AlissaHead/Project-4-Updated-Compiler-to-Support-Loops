@@ -1,0 +1,3 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: functions are defined but there is no main. */
+int f() { return 1; }

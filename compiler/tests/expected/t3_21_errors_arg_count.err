@@ -1,0 +1,14 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Wrong Argument Count                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: Function 'two' takes 2 argument(s), but this call passes 1
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Wrong Argument Count                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 8
+  ❌ Error: Function 'one' takes 1 argument(s), but this call passes 2
+

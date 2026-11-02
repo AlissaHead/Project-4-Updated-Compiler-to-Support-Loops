@@ -1,0 +1,7 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Call To Main                              ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 6
+  ❌ Error: 'main' is the program's entry point and cannot be called
+

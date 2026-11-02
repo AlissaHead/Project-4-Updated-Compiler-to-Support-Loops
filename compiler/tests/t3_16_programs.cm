@@ -1,0 +1,68 @@
+/* Expected output: 150  50  10  20  30  40  50  8  1024
+ * Whole programs that use arrays, recursion and scope together.
+ *   sum(a, 5) adds an array recursively: 150.
+ *   maxOf finds the largest element recursively: 50.
+ *   Selection sort is written with recursion, since the language has no loops
+ *   yet; the array starts as 30 10 50 20 40 and is sorted IN PLACE through
+ *   its by-reference parameter.
+ *   gcd(24, 16) = 8 and power(2, 10) = 1024. */
+int data[5];
+
+int sum(int a[], int n) {
+    if (n == 0) return 0;
+    return a[n - 1] + sum(a, n - 1);
+}
+
+int maxOf(int a[], int n) {
+    int rest;
+    if (n == 1) return a[0];
+    rest = maxOf(a, n - 1);
+    if (a[n - 1] > rest) return a[n - 1];
+    return rest;
+}
+
+int indexOfMin(int a[], int from, int n) {
+    int best;
+    if (from == n - 1) return from;
+    best = indexOfMin(a, from + 1, n);
+    if (a[from] <= a[best]) return from;
+    return best;
+}
+
+void sort(int a[], int from, int n) {
+    int m;
+    int tmp;
+    if (from >= n - 1) return;
+    m = indexOfMin(a, from, n);
+    tmp = a[from];
+    a[from] = a[m];
+    a[m] = tmp;
+    sort(a, from + 1, n);
+}
+
+void printAll(int a[], int i, int n) {
+    if (i == n) return;
+    print(a[i]);
+    printAll(a, i + 1, n);
+}
+
+int gcd(int a, int b) {
+    if (b == 0) return a;
+    return gcd(b, a - a / b * b);
+}
+
+int power(int b, int e) {
+    if (e == 0) return 1;
+    return b * power(b, e - 1);
+}
+
+int main() {
+    data[0] = 30; data[1] = 10; data[2] = 50; data[3] = 20; data[4] = 40;
+    print(sum(data, 5));
+    print(maxOf(data, 5));
+    sort(data, 0, 5);
+    printAll(data, 0, 5);
+    print(gcd(24, 16));
+    print(power(2, 10));
+    return 0;
+}

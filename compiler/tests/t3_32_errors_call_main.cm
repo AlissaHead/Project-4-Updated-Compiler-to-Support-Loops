@@ -1,0 +1,8 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * main ends by exiting the program, so a call to it could never return.
+ * Expected: an error on line 6. */
+int count;
+int main() {
+    main();
+    return 0;
+}

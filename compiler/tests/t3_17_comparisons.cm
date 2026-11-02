@@ -1,0 +1,27 @@
+/* Expected output: 1  0  1  1  1  0  1
+ * Comparison precedence, from the grammar reference's precedence table:
+ * == and != bind looser than < > <= >=, which bind looser than arithmetic,
+ * and all are left associative.  The operands are parameters, so these
+ * really run on the machine.  With a=1 b=2 c=3:
+ *   a == b < c         is  a == (b < c)     = 1 == 1 = 1   (wrong level: 0)
+ *   c > b > a          is  (c > b) > a      = 1 > 1  = 0   (right-assoc: 1)
+ *   a < b == a         is  (a < b) == a     = 1 == 1 = 1
+ *   a + 1 < b * 2      is  2 < 4                     = 1
+ *   a != b == a        is  (a != b) == a    = 1
+ *   a - c >= 0                              = 0
+ *   -a < 0                                  = 1 */
+int cmp(int a, int b, int c) {
+    print(a == b < c);
+    print(c > b > a);
+    print(a < b == a);
+    print(a + 1 < b * 2);
+    print(a != b == a);
+    print(a - c >= 0);
+    print(-a < 0);
+    return 0;
+}
+
+int main() {
+    cmp(1, 2, 3);
+    return 0;
+}

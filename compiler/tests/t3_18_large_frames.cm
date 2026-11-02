@@ -1,0 +1,32 @@
+/* Expected output: 19999  9999  29998  55  77
+ * Frames too large for a 16-bit immediate.  addi can move $sp by at most 32767
+ * bytes, and main's frame here is around 80,000.  The far end of a local array
+ * works, as does a global one (kept under SPIM's 64 KB data segment), and a
+ * recursive function can keep a large local array in every activation:
+ * rec(10) = 10 + 9 + ... + 1 = 55.
+ * A scalar declared AFTER the array has a large offset too: 77. */
+int g[10000];
+
+int fill(int a[], int i) {
+    a[i] = i;
+    return a[i];
+}
+
+int rec(int n) {
+    int big[4000];
+    big[3999] = n;
+    if (n == 0) return 0;
+    return rec(n - 1) + big[3999];
+}
+
+int main() {
+    int l[20000];
+    int after;
+    after = 77;
+    print(fill(l, 19999));
+    print(fill(g, 9999));
+    print(l[19999] + g[9999]);
+    print(rec(10));
+    print(after);
+    return 0;
+}

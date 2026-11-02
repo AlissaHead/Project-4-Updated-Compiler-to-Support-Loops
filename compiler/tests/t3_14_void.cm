@@ -1,0 +1,30 @@
+/* Expected output: 5  6  7
+ * void functions (an optional extension).  A void function takes `return;`
+ * or simply runs off its end.  `bump(void)` is the same as `bump()`.  The call
+ * to value() is a statement, so its result is discarded. */
+int count;
+
+void bump(void) {
+    count = count + 1;
+}
+
+void report(int limit) {
+    if (count > limit) {
+        return;
+    }
+    print(count);
+}
+
+int value() { count = count + 1; return count; }
+
+int main() {
+    count = 4;
+    bump();
+    report(10);
+    value();
+    report(0);
+    report(10);
+    bump();
+    report(10);
+    return 0;
+}

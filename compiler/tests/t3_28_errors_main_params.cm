@@ -1,0 +1,3 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: main must take no parameters (line 3). */
+int main(int argc) { return 0; }

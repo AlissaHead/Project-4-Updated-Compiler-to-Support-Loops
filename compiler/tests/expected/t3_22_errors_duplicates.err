@@ -1,0 +1,31 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Duplicate Function                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 16
+  ❌ Error: Function 'f' is already defined on line 6
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Duplicate Declaration                    ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 6
+  ❌ Error: Variable 'a' is already declared in this scope
+  💡 Suggestion: remove the duplicate, or rename one of the two
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Duplicate Declaration                    ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: Variable 'b' is already declared in this scope
+  💡 Suggestion: remove the duplicate, or rename one of the two
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Duplicate Declaration                    ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 12
+  ❌ Error: Variable 'c' is already declared in this scope
+  💡 Suggestion: remove the duplicate, or rename one of the two
+

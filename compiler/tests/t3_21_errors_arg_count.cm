@@ -1,0 +1,12 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected: wrong argument counts on lines 7 and 8 (too few, then too many),
+ * including a call above the function's definition. */
+int one(int a) { return a; }
+
+int main() {
+    print(two(1));
+    print(one(1, 2));
+    return 0;
+}
+
+int two(int a, int b) { return a + b; }

@@ -1,0 +1,19 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Expected, in order:
+ *   line 13  an array used as a value
+ *   line 14  an array assigned as a whole
+ *   line 15  a scalar indexed like an array
+ *   line 16  an array passed where a value is expected
+ *   line 17  a value passed where an array is expected */
+int takesValue(int v) { return v; }
+int takesArray(int a[]) { return a[0]; }
+int main() {
+    int a[3];
+    int x;
+    x = a + 1;
+    a = 5;
+    x[0] = 1;
+    takesValue(a);
+    takesArray(x);
+    return 0;
+}

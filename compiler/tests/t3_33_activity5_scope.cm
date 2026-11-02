@@ -1,0 +1,16 @@
+/* Expected output: 10  6  99  10
+ * The program from class activity 5 (Scope and Shadowing).  Static scoping:
+ * twice's parameter n never touches the global, and the block's n goes away
+ * at its closing brace. */
+int n;
+int twice(int n) { return n + n; }
+int main() {
+    int m;
+    n = 10;
+    m = twice(3);
+    print(n);
+    print(m);
+    { int n; n = 99; print(n); }
+    print(n);
+    return 0;
+}

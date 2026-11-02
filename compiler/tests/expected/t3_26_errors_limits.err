@@ -1,0 +1,23 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Too Many Parameters                       ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 5
+  ❌ Error: Function 'f' has 5 parameters; the limit is 4 ($a0-$a3)
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Statement Outside Function                ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: Executable statements must be inside a function
+  💡 Suggestion: move it into main(); a global cannot have an initial value
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Statement Outside Function                ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 8
+  ❌ Error: Executable statements must be inside a function
+  💡 Suggestion: move it into main(); a global cannot have an initial value
+

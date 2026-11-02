@@ -1,0 +1,6 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * A flat program has no function to return from.
+ * Expected: 'return' outside a function, line 6. */
+int x;
+x = 1;
+return x;
