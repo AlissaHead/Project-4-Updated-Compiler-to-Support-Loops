@@ -1,17 +1,22 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: main.c   —   The driver — runs all six phases in order
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • The six-phase driver: runs each phase, stops at the first phase that
- *     reports errors, and prints a summary with per-phase timings
+ * PHASE
+ *   The driver: runs all six phases in order.
+ *
+ * RECEIVES
+ *   The command line: <input.cm> <output.s> and options.
+ *
+ * PRODUCES
+ *   The output files, a summary, and exit status 0 (success) or 1 (any error).
  *
  * CREDITS
- *   Six-phase driver from the CST-405 course starter code.  Lexical-error check, -O0 and
- *   -nopeep flags, and the peephole report added by Alissa Head.
+ *   Six-phase driver from the CST-405 course starter code.  Lexical-error check, -O0 and -nopeep
+ *   flags, and the peephole report: Alissa Head.
  * ========================================================================= */
 
 /* ============================================================================

@@ -1,9 +1,18 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: trace.h   —   Shared tracing helper
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
+ *
+ * PHASE
+ *   Shared by every phase.
+ *
+ * RECEIVES
+ *   Nothing.
+ *
+ * PRODUCES
+ *   trace(), the compiler's narration, silenced by -q.
  *
  * CREDITS
  *   From the CST-405 course starter code.
