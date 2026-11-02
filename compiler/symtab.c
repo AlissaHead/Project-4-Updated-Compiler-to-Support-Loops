@@ -1,16 +1,21 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: symtab.c   —   Phases 3 & 6 — Symbol table / storage map
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • Four bytes per int, handed out in declaration order
+ * PHASE
+ *   Phase 6, code generation (the STORAGE table).
+ *
+ * RECEIVES
+ *   The declarations in one function's TAC, and the program's globals.
+ *
+ * PRODUCES
+ *   A concrete address for every name: a .data label or an offset from $sp.
  *
  * CREDITS
  *   Symbol table insert and lookup: Alissa Head.
- *   (Interface in symtab.h from the CST-405 course starter code.)
  * ========================================================================= */
 
 /* ============================================================================

@@ -1,12 +1,18 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: symtab.h   —   Phases 3 & 6 — Symbol table / storage map
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • Name -> storage location, the map every later phase consults
+ * PHASE
+ *   Phase 6, code generation (the STORAGE table).
+ *
+ * RECEIVES
+ *   Nothing: this is the interface of symtab.c.
+ *
+ * PRODUCES
+ *   The lookup functions codegen.c uses to turn a name into an address.
  *
  * CREDITS
  *   Interface from the CST-405 course starter code.
@@ -40,7 +46,7 @@
  * program (initGlobalScope).
  * ========================================================================== */
 
-#define MAX_VARS 128   /* Maximum symbols per scope (locals or globals) */
+#define MAX_VARS 1024  /* Maximum symbols per scope (locals or globals) */
 
 /* ---------------------------------------------------------------------------
  * SYMBOL ENTRY

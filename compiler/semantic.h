@@ -1,10 +1,19 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: semantic.h   —   Phase 3 — Semantic analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                               ^^^^^^^^  this file
+ *
+ * PHASE
+ *   Phase 3, semantic analysis.
+ *
+ * RECEIVES
+ *   Nothing: this is the interface of semantic.c.
+ *
+ * PRODUCES
+ *   The entry points main.c calls.
  *
  * CREDITS
  *   Interface from the CST-405 course starter code.
