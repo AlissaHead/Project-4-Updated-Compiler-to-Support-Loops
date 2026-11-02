@@ -1,14 +1,22 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: tac.h   —   Phases 4 & 5 — Intermediate code and optimization
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                           ^^^  this file
  *
+ * PHASE
+ *   Phases 4 and 5, intermediate code and optimization.
+ *
+ * RECEIVES
+ *   Nothing: this is the interface of tac.c.
+ *
+ * PRODUCES
+ *   The TAC instruction set, the contract between the front and back ends.
+ *
  * CREDITS
- *   Interface from the CST-405 course starter code; OptStats fields for dead stores and
- *   jump optimizations, and skipOptimizeTAC() (-O0), added by Alissa Head.
+ *   Interface from the CST-405 course starter code; optimization statistics and -O0 hook: Alissa Head.
  * ========================================================================= */
 
 #ifndef TAC_H
@@ -97,7 +105,7 @@ typedef struct {
 } TACList;
 
 /* TEMPORARY VARIABLE ALLOCATION/DEALLOCATION */
-#define MAX_TEMPS 100
+#define MAX_TEMPS 1000
 
 typedef struct {
     int allocated[MAX_TEMPS];
@@ -136,6 +144,7 @@ typedef struct {
     int branch;              /* Constant-condition branches simplified     */
     int jumpToNext;          /* "GOTO L" removed because L is the next line */
     int jumpThread;          /* "GOTO L1" retargeted past "L1: GOTO L2"    */
+    int deadLabel;           /* Labels removed because nothing jumps there */
 } OptStats;
 
 /* TAC OPTIMIZATION AND OUTPUT */

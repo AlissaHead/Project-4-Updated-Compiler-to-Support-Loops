@@ -1,21 +1,24 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: tac.c   —   Phases 4 & 5 — Intermediate code and optimization
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                           ^^^  this file
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • Phase 4: AST -> three-address code (saved to <output>.tac)
- *   • Phase 5: a fixed-point optimizer — value passes (folding, propagation,
- *     algebraic identities, dead code / dead stores) and a flow pass
- *     (branch simplification, jump threading, unreachable code)
+ * PHASE
+ *   Phases 4 and 5, intermediate code and optimization.
+ *
+ * RECEIVES
+ *   Phase 4 receives the checked AST.  Phase 5 receives Phase 4's TAC.
+ *
+ * PRODUCES
+ *   Three-address code (<output>.tac) and optimized TAC (<output>.optimized.tac).
+ *   The optimized list is what Phase 6 translates.
  *
  * CREDITS
- *   Temporary/label allocation and list handling from the CST-405 course starter code.
- *   AST -> TAC translation and the optimizer, including dead store
- *   elimination and the flow-optimization pass: Alissa Head.
+ *   Temporary allocation and list handling from the CST-405 course starter code.
+ *   AST -> TAC translation and the optimizer: Alissa Head.
  * ========================================================================= */
 
 #include <stdio.h>
@@ -73,8 +76,21 @@ char* allocTemp() {
     return temp;
 }
 
+/* A fresh label name (L0, L1, ...).  Labels are global in the assembler, so
+ * the counter runs across the whole program, not per function. */
+char* newLabel() {
+    char* label = malloc(16);
+    sprintf(label, "L%d", tacList.labelCount++);
+    return label;
+}
+
 void freeTemp(char* temp) {
-    if (!temp || temp[0] != 't') return;
+    /* Callers pass any operand, so this must test the WHOLE name.  Checking
+     * only the first letter would treat the variable `total` as temporary
+     * number atoi("otal") == 0, and free t0 while it was still in use. */
+    if (!temp || temp[0] != 't' || !temp[1]) return;
+    for (int i = 1; temp[i]; i++)
+        if (temp[i] < '0' || temp[i] > '9') return;
 
     int tempNum = atoi(temp + 1);
     if (!tempAlloc.allocated[tempNum]) return;
@@ -134,6 +150,9 @@ void appendOptimizedTAC(TACInstr* instr) {
 /* Forward declarations */
 static void generateTACStmt(ASTNode* node);
 
+/* More than four is rejected in semantic.c, so this only bounds the array. */
+#define MAX_CALL_ARGS 32
+
 
 /* Map an AST operator character to its TAC opcode. */
 static TACOp binOpToTAC(char op) {
@@ -142,13 +161,48 @@ static TACOp binOpToTAC(char op) {
         case '-': return TAC_SUB;
         case '*': return TAC_MUL;
         case '/': return TAC_DIV;
+        case '<': return TAC_LT;
+        case '>': return TAC_GT;
+        case 'L': return TAC_LE;
+        case 'G': return TAC_GE;
+        case 'E': return TAC_EQ;
+        case 'N': return TAC_NE;
         default:
             fprintf(stderr, "TAC ERROR: unknown binary operator '%c'\n", op);
             return TAC_ADD;
     }
 }
 
-/* Generate TAC for expression - returns the temp/var holding result */
+/* Generate TAC for a call, leaving the value in `result` (NULL to discard it).
+ *
+ * Every argument is evaluated FIRST, and only then are the ARG instructions
+ * emitted, in one unbroken run right before the CALL.  That is what makes
+ * f(1, g(2)) correct: g's whole call finishes while no ARG of f has been
+ * issued yet, so the back end never has to keep track of which pending
+ * arguments belong to which call.  The alternative, an ARG after each
+ * argument, needs a stack of pending arguments in the code generator. */
+static void generateCall(ASTNode* node, char* result) {
+    char* values[MAX_CALL_ARGS];
+    int count = 0;
+
+    for (ASTNode* a = node->data.call.args; a; a = a->data.list.next) {
+        char* value = generateTACExpr(a->data.list.item);
+        if (count < MAX_CALL_ARGS) values[count++] = value;
+    }
+    for (int i = 0; i < count; i++) {
+        appendTAC(createTAC(TAC_ARG, values[i], NULL, NULL));
+        freeTemp(values[i]);
+        free(values[i]);
+    }
+
+    char countText[16];
+    snprintf(countText, sizeof countText, "%d", count);
+    appendTAC(createTAC(TAC_CALL, node->data.call.name, countText, result));
+}
+
+/* Generate TAC for expression.  Returns the NAME of the location holding the
+ * result: a temporary, a variable, or the text of a literal.  The caller owns
+ * the returned string, and freeTemp()s it once the value has been used. */
 char* generateTACExpr(ASTNode* node) {
     if (!node) return NULL;
 
@@ -167,6 +221,20 @@ char* generateTACExpr(ASTNode* node) {
             return strdup(node->data.name);
 
         case NODE_BINOP: {
+            /* Unary minus has no right operand, and its own opcode. */
+            if (node->data.binop.op == 'u') {
+                char* operand = generateTACExpr(node->data.binop.left);
+                char* t       = allocTemp();
+                appendTAC(createTAC(TAC_NEG, operand, NULL, t));
+                freeTemp(operand);
+                free(operand);
+                return t;
+            }
+
+            /* Limitation: a variable operand is returned by NAME and read when
+             * the operation runs, so in `g + f()` a global g is read AFTER the
+             * call.  C leaves this order unspecified; a program can only
+             * tell if f assigns g. */
             char* left  = generateTACExpr(node->data.binop.left);
             char* right = generateTACExpr(node->data.binop.right);
             char* t     = allocTemp();
@@ -178,6 +246,24 @@ char* generateTACExpr(ASTNode* node) {
             freeTemp(right);
             free(left);
             free(right);
+            return t;
+        }
+
+        case NODE_ARRAY_INDEX: {
+            /* a[i] becomes one instruction.  The address arithmetic is not
+             * written out here because TAC has no idea what a word is; the
+             * width of an element is the back end's knowledge. */
+            char* index = generateTACExpr(node->data.arrayindex.index);
+            char* t     = allocTemp();
+            appendTAC(createTAC(TAC_ARRAY_LOAD, node->data.arrayindex.name, index, t));
+            freeTemp(index);
+            free(index);
+            return t;
+        }
+
+        case NODE_FUNC_CALL: {
+            char* t = allocTemp();
+            generateCall(node, t);
             return t;
         }
 
@@ -211,11 +297,81 @@ static void generateTACStmt(ASTNode* node) {
                                  node->data.decl.name));
             break;
 
+        case NODE_ARRAY_DECL: {
+            char size[16];
+            snprintf(size, sizeof size, "%d", node->data.arraydecl.size);
+            appendTAC(createTAC(TAC_ARRAY_DECL, size, NULL, node->data.arraydecl.name));
+            break;
+        }
+
         case NODE_ASSIGN: {
-            char* value = generateTACExpr(node->data.assign.value);
-            appendTAC(createTAC(TAC_ASSIGN, value, NULL, node->data.assign.var));
+            /* Two shapes.  For a[i] = v the index is evaluated first, then
+             * the value, which is the order they appear in the source. */
+            ASTNode* target = node->data.assign.arrayLHS;
+            if (target) {
+                char* index = generateTACExpr(target->data.arrayindex.index);
+                char* value = generateTACExpr(node->data.assign.value);
+                appendTAC(createTAC(TAC_ARRAY_STORE, target->data.arrayindex.name,
+                                    index, value));
+                freeTemp(index);
+                freeTemp(value);
+                free(index);
+                free(value);
+            } else {
+                char* value = generateTACExpr(node->data.assign.value);
+                appendTAC(createTAC(TAC_ASSIGN, value, NULL, node->data.assign.var));
+                freeTemp(value);
+                free(value);
+            }
+            break;
+        }
+
+        case NODE_FUNC_CALL:
+            generateCall(node, NULL);      /* a statement discards the value */
+            break;
+
+        case NODE_RETURN: {
+            /* Emitting RETURN is the easy half.  Making it actually LEAVE the
+             * function, skipping whatever follows, is codegen.c's job. */
+            char* value = node->data.ret ? generateTACExpr(node->data.ret) : NULL;
+            appendTAC(createTAC(TAC_RETURN, value, NULL, NULL));
             freeTemp(value);
             free(value);
+            break;
+        }
+
+        case NODE_BLOCK:
+            /* The scope this opened mattered to semantic analysis and is
+             * finished with by now: names were already made unique there. */
+            generateTACStmtList(node->data.block);
+            break;
+
+        case NODE_IF: {
+            /*      if_false c goto Lelse
+             *      ...then...
+             *      goto Lend            (only when there is an else)
+             *  Lelse:
+             *      ...else...
+             *  Lend:                                                        */
+            char* cond      = generateTACExpr(node->data.ifstmt.cond);
+            char* elseLabel = newLabel();
+            appendTAC(createTAC(TAC_IF_FALSE, cond, elseLabel, NULL));
+            freeTemp(cond);
+            free(cond);
+
+            generateTACStmt(node->data.ifstmt.thenStmt);
+
+            if (node->data.ifstmt.elseStmt) {
+                char* endLabel = newLabel();
+                appendTAC(createTAC(TAC_GOTO, endLabel, NULL, NULL));
+                appendTAC(createTAC(TAC_LABEL, NULL, NULL, elseLabel));
+                generateTACStmt(node->data.ifstmt.elseStmt);
+                appendTAC(createTAC(TAC_LABEL, NULL, NULL, endLabel));
+                free(endLabel);
+            } else {
+                appendTAC(createTAC(TAC_LABEL, NULL, NULL, elseLabel));
+            }
+            free(elseLabel);
             break;
         }
 
@@ -237,13 +393,65 @@ static void generateTACStmt(ASTNode* node) {
     }
 }
 
+/* A function becomes  FUNC_BEGIN f ; PARAM ... ; body ; RETURN ; FUNC_END f.
+ * An array parameter is marked "int[]", which tells the code generator its
+ * slot holds an address rather than a value.
+ *
+ * The RETURN added at the end covers a body that runs off its closing brace.
+ * When the body already ends in a return, it is unreachable and the optimizer
+ * removes it. */
+static void generateTACFuncDef(ASTNode* node) {
+    appendTAC(createTAC(TAC_FUNC_BEGIN, NULL, NULL, node->data.funcdef.name));
+
+    for (ASTNode* p = node->data.funcdef.params; p; p = p->data.list.next) {
+        ASTNode* param = p->data.list.item;
+        appendTAC(createTAC(TAC_PARAM, param->data.param.isArray ? "int[]" : "int",
+                            NULL, param->data.param.name));
+    }
+
+    generateTACStmtList(node->data.funcdef.body);
+
+    appendTAC(createTAC(TAC_RETURN, node->data.funcdef.isVoid ? NULL : "0", NULL, NULL));
+    appendTAC(createTAC(TAC_FUNC_END, NULL, NULL, node->data.funcdef.name));
+}
+
+/* Walk the top level of a program that defines functions.  Declarations here
+ * are globals: they are emitted before any FUNC_BEGIN, which is how the code
+ * generator tells them apart from locals. */
+static void generateTACList(ASTNode* node) {
+    if (!node) return;
+    if (node->type == NODE_STMT_LIST) {
+        generateTACList(node->data.stmtlist.stmt);
+        generateTACList(node->data.stmtlist.next);
+    } else if (node->type == NODE_FUNC_DEF) {
+        generateTACFuncDef(node);
+    } else {
+        generateTACStmt(node);
+    }
+}
+
+/* Does the program define at least one function? */
+static int definesFunction(ASTNode* node) {
+    if (!node) return 0;
+    if (node->type == NODE_FUNC_DEF) return 1;
+    if (node->type == NODE_STMT_LIST)
+        return definesFunction(node->data.stmtlist.stmt) ||
+               definesFunction(node->data.stmtlist.next);
+    return 0;
+}
+
 void generateTAC(ASTNode* node) {
     if (!node) return;
-    /* The starter language has no function syntax, but the code generator
-     * still emits code into MIPS functions — every program needs an entry
-     * point called `main`.  So the whole statement list becomes the body of
-     * an implicit main().  Topic 3 makes that function explicit in the
-     * source, and this wrapper goes away. */
+
+    if (definesFunction(node)) {
+        generateTACList(node);
+        return;
+    }
+
+    /* A program with no functions is a Project 2 program, and the code
+     * generator still emits code into MIPS functions: every program needs an
+     * entry point called `main`.  So the whole statement list becomes the body
+     * of an implicit main(). */
     appendTAC(createTAC(TAC_FUNC_BEGIN, NULL, NULL, "main"));
     generateTACStmt(node);
     appendTAC(createTAC(TAC_RETURN, "0", NULL, NULL));
@@ -300,8 +508,10 @@ void formatTAC(const TACInstr* i, char* buf, size_t n) {
         case TAC_ASSIGN:     snprintf(buf, n, "%s = %s", i->result, i->arg1); break;
         case TAC_PRINT:      snprintf(buf, n, "PRINT %s", i->arg1); break;
         case TAC_ARG:        snprintf(buf, n, "ARG %s", i->arg1); break;
-        case TAC_CALL:       snprintf(buf, n, "%s = CALL %s, %s",
-                                      i->result, i->arg1, i->arg2); break;
+        case TAC_CALL:       if (i->result) snprintf(buf, n, "%s = CALL %s, %s",
+                                                     i->result, i->arg1, i->arg2);
+                             else           snprintf(buf, n, "CALL %s, %s", i->arg1, i->arg2);
+                             break;
         case TAC_RETURN:     if (i->arg1) snprintf(buf, n, "RETURN %s", i->arg1);
                              else         snprintf(buf, n, "RETURN");
                              break;
@@ -325,7 +535,7 @@ int countTAC(const TACList* list) {
 }
 
 static void dumpList(const TACList* list, const char* title) {
-    char buf[256];
+    char buf[1024];
     trace("%s\n", title);
     trace("─────────────────────────────────────────────\n");
     int line = 1;
@@ -349,7 +559,7 @@ TACList* getUnoptimizedTAC(void) { return &tacList; }
 static void saveList(const TACList* list, const char* filename, const char* banner) {
     FILE* f = fopen(filename, "w");
     if (!f) { fprintf(stderr, "Cannot write %s\n", filename); return; }
-    char buf[256];
+    char buf[1024];
     fprintf(f, "; %s\n", banner);
     fprintf(f, "; Generated by the CST-405 mini compiler\n;\n");
     int line = 1;
@@ -396,6 +606,7 @@ void saveOptimizedTACToFile(const char* filename) { saveList(&optimizedList, fil
  *   8. Jump threading             a jump to a jump goes straight to the end
  *   9. Jump-to-next removal       GOTO L immediately followed by L:
  *  10. Unreachable code removal   drop code between GOTO/RETURN and next label
+ *  11. Unused label removal       a label nothing jumps to
  *
  * (Peephole optimization runs later, on the generated MIPS: see peephole.c.)
  *
@@ -437,13 +648,21 @@ static void dropFactsAbout(const char* name) {
     }
 }
 
-/* A call can change any global or array element, so only facts about
- * compiler temporaries survive it. */
+/* Is this name a compiler temporary (t0, t1, ...)? */
+static int isTempText(const char* s) {
+    if (!s || s[0] != 't' || !s[1]) return 0;
+    for (int i = 1; s[i]; i++) if (s[i] < '0' || s[i] > '9') return 0;
+    return 1;
+}
+
+/* A call can change any global, so only facts that involve nothing but
+ * temporaries and literals survive it.  "t1 is a copy of g" must go too: it
+ * is a fact ABOUT a temporary, but it says something about g. */
 static void dropNonTempFacts(void) {
     for (int i = 0; i < factCount; i++) {
-        const char* n = facts[i].name;
-        int temp = (n[0] == 't' && n[1] >= '0' && n[1] <= '9');
-        if (!temp) { facts[i] = facts[--factCount]; i--; }
+        int keep = isTempText(facts[i].name) &&
+                   (facts[i].isConst || isTempText(facts[i].value));
+        if (!keep) { facts[i] = facts[--factCount]; i--; }
     }
 }
 
@@ -466,13 +685,44 @@ static const char* lookupFact(const char* name, int wantConst) {
 
 /* True for opcodes that only compute a value into `result` and have no other
  * effect.  Only these are candidates for dead-code elimination: a CALL may
- * print or modify globals, a STORE writes memory, a branch changes control. */
+ * print or modify globals, a STORE writes memory, a branch changes control.
+ * TAC_DIV is left out on purpose: an unused a / b can still trap on a zero
+ * divisor, and deleting it would change what the program does. */
 static int mnemonicIsPure(TACOp op) {
+    switch (op) {
+        case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_NEG:
+        case TAC_LT:  case TAC_GT:  case TAC_LE:  case TAC_GE:
+        case TAC_EQ:  case TAC_NE:  case TAC_AND: case TAC_OR: case TAC_NOT:
+        case TAC_ARRAY_LOAD:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Is arg1 / arg2 of this instruction a VALUE being read?  Constant and copy
+ * propagation may only touch operands that are.  arg1 of a CALL is a function
+ * name, arg1 of an ARRAY_LOAD is an array, arg2 of an IF is a label, and a
+ * variable can legally share its spelling with any of those. */
+static int arg1IsValue(TACOp op) {
     switch (op) {
         case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV: case TAC_NEG:
         case TAC_LT:  case TAC_GT:  case TAC_LE:  case TAC_GE:
         case TAC_EQ:  case TAC_NE:  case TAC_AND: case TAC_OR: case TAC_NOT:
-        case TAC_ARRAY_LOAD:
+        case TAC_ASSIGN: case TAC_PRINT: case TAC_ARG: case TAC_RETURN:
+        case TAC_IF_FALSE: case TAC_IF_TRUE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int arg2IsValue(TACOp op) {
+    switch (op) {
+        case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV:
+        case TAC_LT:  case TAC_GT:  case TAC_LE:  case TAC_GE:
+        case TAC_EQ:  case TAC_NE:  case TAC_AND: case TAC_OR:
+        case TAC_ARRAY_LOAD: case TAC_ARRAY_STORE:
             return 1;
         default:
             return 0;
@@ -493,6 +743,8 @@ static char* foldConstants(TACOp op, const char* a1, const char* a2, int* folded
     *folded = 0;
     if (!isConstantNumber(a1) || !isConstantNumber(a2)) return NULL;
     long a = atol(a1), b = atol(a2), r;
+    /* Compute in 32 bits, as the MIPS instruction would.  Folding in 64 could
+     * produce a constant the program would never have seen at run time. */
     switch (op) {
         case TAC_ADD: r = a + b; break;
         case TAC_SUB: r = a - b; break;
@@ -513,16 +765,18 @@ static char* foldConstants(TACOp op, const char* a1, const char* a2, int* folded
         default: return NULL;
     }
     char* s = malloc(24);
-    snprintf(s, 24, "%ld", r);
+    snprintf(s, 24, "%d", (int)r);
     *folded = 1;
     return s;
 }
 
-/* Does `name` get read anywhere at or after instruction `from`?
+/* Does `name` get read anywhere at or after instruction `from`, up to the end
+ * of the function?  Temporaries and locals are private to one activation, so
+ * a later function that reuses the same spelling is a different location.
  * A conservative liveness test: it stops being conservative only for
  * compiler temporaries, which is exactly where dead code piles up. */
 static int isReadLater(TACInstr* from, const char* name) {
-    for (TACInstr* c = from; c; c = c->next) {
+    for (TACInstr* c = from; c && c->op != TAC_FUNC_END; c = c->next) {
         if (c->arg1 && strcmp(c->arg1, name) == 0) return 1;
         if (c->arg2 && strcmp(c->arg2, name) == 0) return 1;
         /* ARRAY_STORE reads its `result` field (the value being stored) */
@@ -592,6 +846,15 @@ static TACInstr* findLabel(TACList* l, const char* label) {
     return NULL;
 }
 
+/* Does any jump in list `l` target this label? */
+static int labelIsUsed(TACList* l, const char* label) {
+    for (TACInstr* c = l->head; c; c = c->next) {
+        char* target = jumpTarget(c);
+        if (target && strcmp(target, label) == 0) return 1;
+    }
+    return 0;
+}
+
 /* -------------------------------------------------------------------------
  * FLOW OPTIMIZATION — one pass over `in`, producing a new list.
  *
@@ -611,17 +874,27 @@ static TACInstr* findLabel(TACList* l, const char* label) {
  *                              RETURN up to the next LABEL can never run.
  *                              Declarations are kept: they produce no code
  *                              but layoutFrame() still needs them.
+ *   e. Unused labels           a label no jump targets is removed.
  *
- * The starter language has no if/while yet, so a real program never gives
- * this pass a jump to work on — but the IR already contains the jump
- * opcodes (tac.h), and tests/unit/test_optimizer.c exercises every case
- * here directly so the pass is proven before Topic 4 starts emitting jumps.
+ * `if` produces real jumps for this pass to work on (see tests/t3_13), and
+ * tests/unit/test_optimizer.c exercises every case directly, including
+ * patterns no current source program can produce.
  * -----------------------------------------------------------------------*/
 static TACList flowPass(TACList* in) {
     TACList out = { NULL, NULL, in->tempCount, in->labelCount };
     int unreachable = 0;     /* 1 while skipping code after GOTO/RETURN */
 
     for (TACInstr* c = in->head; c; c = c->next) {
+        /* A label nothing jumps to does not start a new path, so it must not
+         * make code reachable.  This is what finishes the job on `if (1) ...
+         * else ...`: once the branch is simplified, the else label has no
+         * jumps left, and removing it exposes the else code as unreachable. */
+        if (c->op == TAC_LABEL && !labelIsUsed(in, c->result)) {
+            optStats.deadLabel++;
+            changesThisPass++;
+            continue;
+        }
+
         /* A label or the end of a function makes code reachable again. */
         if (c->op == TAC_LABEL || c->op == TAC_FUNC_END || c->op == TAC_FUNC_BEGIN)
             unreachable = 0;
@@ -717,10 +990,21 @@ static TACList optimizePass(TACList* in) {
         if (c->op == TAC_LABEL) clearFacts();
         if (c->op == TAC_CALL)  dropNonTempFacts();
 
+        /* The same rule at a function boundary.  The next function is entered
+         * by a call from anywhere, so nothing learned in the previous one is
+         * true there, even about a global.  Without this, `g = v;` at the end
+         * of one function makes the next one read a parameter it doesn't have. */
+        if (c->op == TAC_FUNC_BEGIN) clearFacts();
+
         /* --- constant / copy propagation: substitute what is already known --- */
         const char* a1 = c->arg1;
         const char* a2 = c->arg2;
-        if (a1 && !isConstantNumber(a1)) {
+        const char* stored = c->result;    /* ARRAY_STORE keeps its VALUE here */
+        if (c->op == TAC_ARRAY_STORE && !isConstantNumber(stored)) {
+            const char* k = lookupFact(stored, 1);
+            if (k) { stored = k; optStats.constProp++; changesThisPass++; }
+        }
+        if (a1 && arg1IsValue(c->op) && !isConstantNumber(a1)) {
             const char* k = lookupFact(a1, 1);            /* known constant?   */
             if (k)      { a1 = k; optStats.constProp++; changesThisPass++; }
             else {
@@ -728,7 +1012,7 @@ static TACList optimizePass(TACList* in) {
                 if (cp) { a1 = cp; optStats.copyProp++;  changesThisPass++; }
             }
         }
-        if (a2 && !isConstantNumber(a2)) {
+        if (a2 && arg2IsValue(c->op) && !isConstantNumber(a2)) {
             const char* k = lookupFact(a2, 1);
             if (k)      { a2 = k; optStats.constProp++; changesThisPass++; }
             else {
@@ -767,13 +1051,23 @@ static TACList optimizePass(TACList* in) {
             }
         }
 
-        if (!n) n = createTAC(c->op, (char*)a1, (char*)a2, c->result);
+        /* --- constant folding of unary minus: t0 = -5 --- */
+        if (!n && c->op == TAC_NEG && isConstantNumber(a1)) {
+            char val[24];
+            snprintf(val, sizeof val, "%d", (int)-atol(a1));
+            n = createTAC(TAC_ASSIGN, val, NULL, c->result);
+            optStats.constFold++;
+            changesThisPass++;
+        }
+
+        if (!n) n = createTAC(c->op, (char*)a1, (char*)a2, (char*)stored);
 
         if (!mid.head) mid.head = mid.tail = n;
         else { mid.tail->next = n; mid.tail = n; }
 
-        /* Remember what `result` holds now, for instructions still to come. */
-        if (n->result) {
+        /* Remember what `result` holds now, for instructions still to come.
+         * ARRAY_STORE is skipped: its `result` is a value being READ. */
+        if (n->result && n->op != TAC_ARRAY_STORE) {
             if (n->op == TAC_ASSIGN) recordFact(n->result, n->arg1, isConstantNumber(n->arg1));
             else                     dropFactsAbout(n->result);   /* value now unknown */
         }
@@ -859,6 +1153,7 @@ void optimizeTAC(void) {
     trace("  Branch simplification         %6d\n", optStats.branch);
     trace("  Jump threading                %6d\n", optStats.jumpThread);
     trace("  Jump-to-next removal          %6d\n", optStats.jumpToNext);
+    trace("  Unused label removal          %6d\n", optStats.deadLabel);
     trace("  ─────────────────────────────────────────\n");
     trace("  TAC instructions   %d -> %d  (%d removed, %.1f%% smaller)\n\n",
            optStats.instructionsBefore, optStats.instructionsAfter, removed, pct);
