@@ -1,20 +1,23 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: scanner.l   —   Phase 1 — Lexical analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *   ^^^^^^^  this file
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • The starter token set: `int`, `print`, identifiers, numbers,
- *   • `+`, `-`, `*`, `=`, `;`, `(`, `)`, and both comment forms
- *   • Lexical errors (unknown characters, unterminated comments) with
- *     line and column, counted so the driver can refuse the program
+ * PHASE
+ *   Phase 1, lexical analysis.
+ *
+ * RECEIVES
+ *   Characters from the source file.
+ *
+ * PRODUCES
+ *   Tokens for the parser, each with its line and column.
  *
  * CREDITS
- *   Reference scanner from the CST-405 course starter code (Project 1 token set).
- *   Lexical-error count and unterminated-comment rule: Alissa Head.
+ *   Reference scanner from the CST-405 course starter code.
+ *   Project 3 tokens, lexical-error count and unterminated-comment rule: Alissa Head.
  * ========================================================================= */
 
 %{
@@ -68,6 +71,10 @@ int lexErrors = 0;
 
 static void trackPosition(const char* text, int len) {
     matchLine = curLine;  matchCol = curCol;
+    /* Give every token a source line the grammar can read as @1, @2, ...
+     * A node built at REDUCE time cannot use yylineno: by then Bison may have
+     * read a lookahead token from the next line. */
+    yylloc.first_line = curLine;  yylloc.first_column = curCol;
     int skip = text[0] == ' ' || text[0] == '\t' || text[0] == '\n' ||
                text[0] == '\r' || (text[0] == '/' && len > 1);
     if (!skip) {
@@ -91,7 +98,21 @@ static void trackPosition(const char* text, int len) {
 %%
 
 "int"           { return INT; }
+"void"          { return VOID; }
 "print"         { return PRINT; }
+"return"        { return RETURN; }
+"if"            { return IF; }
+"else"          { return ELSE; }
+
+    /* Reserved for later milestones.  They have no grammar rule yet, so using
+     * one is a syntax error that names the keyword, instead of the word
+     * silently becoming a variable that a later milestone would then break. */
+"while"         { return WHILE; }
+"for"           { return FOR; }
+"break"         { return BREAK; }
+"switch"        { return SWITCH; }
+"case"          { return CASE; }
+"default"       { return DEFAULT; }
 
 [a-zA-Z_][a-zA-Z0-9_]* {
     yylval.str = strdup(yytext);
@@ -107,12 +128,30 @@ static void trackPosition(const char* text, int len) {
 "+"             { return '+'; }
 "-"             { return '-'; }
 "*"             { return '*'; }
+    /* A lone "/" is division.  It cannot swallow the start of a comment: for
+     * "//..." and "/_*...*_/" the comment rules below match more characters,
+     * and longest match beats rule order. */
+"/"             { return '/'; }
+
+    /* Two-character operators are safe next to "<", ">" and "=" for the same
+     * reason: longest match prefers "<=" whatever order the rules are in. */
+"<="            { return LE; }
+">="            { return GE; }
+"=="            { return EQ; }
+"!="            { return NE; }
+"<"             { return '<'; }
+">"             { return '>'; }
 
 "="             { return '='; }
 
 ";"             { return ';'; }
+","             { return ','; }
 "("             { return '('; }
 ")"             { return ')'; }
+"{"             { return '{'; }
+"}"             { return '}'; }
+"["             { return '['; }
+"]"             { return ']'; }
 
 "//".*          { /* Skip single-line comments */ }
 "/*"([^*]|\*+[^*/])*\*+"/"  { /* Skip multi-line comments */ }

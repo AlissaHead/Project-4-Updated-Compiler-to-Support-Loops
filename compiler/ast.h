@@ -1,17 +1,22 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: ast.h   —   Phase 2 — Syntax analysis (the tree it builds)
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                        ^^^  this file
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • The node kinds the starter language needs: NUM, VAR, BINOP,
- *   • DECL, ASSIGN, PRINT, STMT_LIST
+ * PHASE
+ *   Phase 2, syntax analysis (the tree the parser builds).
+ *
+ * RECEIVES
+ *   Nothing: this is the shared definition of the tree.
+ *
+ * PRODUCES
+ *   The node kinds and fields that parser.y fills in and later phases read.
  *
  * CREDITS
- *   Interface from the CST-405 course starter code.
+ *   Node layout from the CST-405 course starter code; Project 3 nodes: Alissa Head.
  * ========================================================================= */
 
 #ifndef AST_H
@@ -32,6 +37,16 @@ typedef enum {
     NODE_ASSIGN,      /* Assignment statement (e.g., x = 10) */
     NODE_PRINT,       /* Print statement (e.g., print(x)) */
     NODE_STMT_LIST,   /* List of statements (program structure) */
+    NODE_FUNC_DEF,    /* Function definition (e.g., int f(int a) { ... }) */
+    NODE_PARAM,       /* One parameter: int a  or  int a[] */
+    NODE_PARAM_LIST,  /* Parameters, in source order */
+    NODE_FUNC_CALL,   /* Function call (e.g., f(1, 2)) */
+    NODE_ARG_LIST,    /* Call arguments, in source order */
+    NODE_RETURN,      /* return e;  or  return; */
+    NODE_BLOCK,       /* { ... }: exists because it opens a SCOPE */
+    NODE_ARRAY_DECL,  /* Array declaration (e.g., int a[10]) */
+    NODE_ARRAY_INDEX, /* Array element (e.g., a[i]) */
+    NODE_IF,          /* if (c) s  or  if (c) s else s */
 } NodeType;
 
 /* AST NODE STRUCTURE
@@ -59,15 +74,16 @@ typedef struct ASTNode {
 
         /* Binary operation structure (NODE_BINOP) */
         struct {
-            char op;                    /* Operator character ('+') */
+            char op;                    /* Operator code; see opText() */
             struct ASTNode* left;       /* Left operand */
-            struct ASTNode* right;      /* Right operand */
+            struct ASTNode* right;      /* Right operand (NULL for unary minus) */
         } binop;
-        
+
         /* Assignment structure (NODE_ASSIGN) */
         struct {
             char* var;                  /* Variable being assigned to (NULL for array) */
             struct ASTNode* value;      /* Expression being assigned */
+            struct ASTNode* arrayLHS;   /* The a[i] target; NULL for a plain variable */
         } assign;
         
         /* Print expression (NODE_PRINT) */
@@ -79,6 +95,54 @@ typedef struct ASTNode {
             struct ASTNode* next;       /* Rest of the list */
         } stmtlist;
 
+        /* Function definition (NODE_FUNC_DEF) */
+        struct {
+            char* name;
+            int   isVoid;               /* 1 = void, 0 = int */
+            struct ASTNode* params;     /* NODE_PARAM_LIST, or NULL */
+            struct ASTNode* body;       /* Statements; NULL for an empty body */
+        } funcdef;
+
+        /* One parameter (NODE_PARAM) */
+        struct {
+            char* name;
+            int   isArray;              /* 1 for `int a[]`: receives an ADDRESS */
+        } param;
+
+        /* Parameter or argument list (NODE_PARAM_LIST, NODE_ARG_LIST) */
+        struct {
+            struct ASTNode* item;       /* NODE_PARAM, or an argument expression */
+            struct ASTNode* next;       /* Rest of the list, in source order */
+        } list;
+
+        /* Function call (NODE_FUNC_CALL) */
+        struct {
+            char* name;
+            struct ASTNode* args;       /* NODE_ARG_LIST, or NULL */
+        } call;
+
+        /* return (NODE_RETURN) and { ... } (NODE_BLOCK) */
+        struct ASTNode* ret;            /* Value; NULL for a bare `return;` */
+        struct ASTNode* block;          /* Statements; NULL for `{ }` */
+
+        /* Array declaration (NODE_ARRAY_DECL) */
+        struct {
+            char* name;
+            int   size;                 /* As written; semantic.c rejects <= 0 */
+        } arraydecl;
+
+        /* Array element (NODE_ARRAY_INDEX) */
+        struct {
+            char* name;
+            struct ASTNode* index;      /* Any integer expression */
+        } arrayindex;
+
+        /* if statement (NODE_IF) */
+        struct {
+            struct ASTNode* cond;
+            struct ASTNode* thenStmt;
+            struct ASTNode* elseStmt;   /* NULL when there is no else */
+        } ifstmt;
     } data;
 } ASTNode;
 
@@ -95,9 +159,22 @@ ASTNode* createPrint(ASTNode* expr);                            /* Create print 
 ASTNode* createStmtList(ASTNode* stmt1, ASTNode* stmt2);        /* Create statement list */
 
 /* Function-related nodes */
+ASTNode* createFuncDef(char* name, int isVoid, ASTNode* params, ASTNode* body);
+ASTNode* createParam(char* name, int isArray);
+ASTNode* createParamList(ASTNode* list, ASTNode* param);        /* Append to list (may be NULL) */
+ASTNode* createFuncCall(char* name, ASTNode* args);
+ASTNode* createArgList(ASTNode* list, ASTNode* expr);           /* Append to list (may be NULL) */
+ASTNode* createReturn(ASTNode* expr);
 
 /* Control flow nodes */
+ASTNode* createBlock(ASTNode* stmts);
+ASTNode* createIf(ASTNode* cond, ASTNode* thenStmt, ASTNode* elseStmt);
 
+/* Array nodes.  There is no createArrayParam: an array parameter has no
+ * size and reserves no elements, so it is a NODE_PARAM with isArray set. */
+ASTNode* createArrayDecl(char* name, int size);
+ASTNode* createArrayIndex(char* name, ASTNode* index);
+ASTNode* createArrayAssign(ASTNode* target, ASTNode* value);    /* a[i] = value */
 
 /* Text form of a packed operator code (see createBinOp) */
 const char* opText(char op);

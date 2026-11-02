@@ -1,15 +1,19 @@
 /* =========================================================================
- * CST-405  ·  Project 2  ·  Minimalist Language Compiler
+ * CST-405  ·  Project 3  ·  Complex Variables and Functions
  * FILE: parser.y   —   Phase 2 — Syntax analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *              ^^^^^^  this file
  *
- * WHAT THIS FILE CONTRIBUTES
- *   • The grammar: a program is a list of statements
- *   • Declaration (optionally with a value), assignment, + - * ( ), and print
- *   • Error productions that name the mistake instead of just saying "syntax error"
+ * PHASE
+ *   Phase 2, syntax analysis.
+ *
+ * RECEIVES
+ *   Tokens from the scanner.
+ *
+ * PRODUCES
+ *   The abstract syntax tree (`root`), or syntax errors with line and column.
  *
  * CREDITS
  *   Prologue (%union, %token, precedence table, yyerror) from the CST-405 course starter code.
@@ -93,15 +97,23 @@ static int  endsStatement(int tok);
 /* TOKEN DECLARATIONS */
 %token <num> NUM "number"
 %token <str> ID "identifier"
-%token INT "'int'" PRINT "'print'"
+%token INT "int" VOID "void" PRINT "print" RETURN "return"
+%token IF "if" ELSE "else"
+%token LE "<=" GE ">=" EQ "==" NE "!="
 
-/* NON-TERMINAL TYPES */
-/* Every non-terminal that yields an AST node must be declared here.
- * Add to this line as you add rules:
- *   %type <node> program stmt_list stmt decl assign expr print_stmt
- * (bison rejects a %type for a non-terminal that has no rules yet,
- *  which is why only `program` is listed to begin with) */
-%type <node> program stmt_list stmt decl assign expr print_stmt
+/* Reserved for later milestones: the scanner returns them, but no rule uses
+ * them yet, so `int while;` is a syntax error that names the keyword. */
+%token WHILE "while" FOR "for" BREAK "break"
+%token SWITCH "switch" CASE "case" DEFAULT "default"
+
+/* Track each token's source line (set in scanner.l) so that a node can record
+ * the line its construct STARTED on, available here as @1, @2, ... */
+%locations
+
+/* NON-TERMINAL TYPES: every non-terminal that yields an AST node */
+%type <node> program top_list top_item func_def params param_list param
+%type <node> stmt_list stmt block decl assign expr print_stmt return_stmt
+%type <node> if_stmt func_call args arg_list
 
 /* OPERATOR PRECEDENCE AND ASSOCIATIVITY
  * Listed from lowest to highest precedence.
@@ -116,26 +128,47 @@ static int  endsStatement(int tok);
  *   when bison sees ELSE it shifts (attaches it to the inner if)
  *   rather than reducing (closing the outer if first).
  */
+%precedence LOWER_THAN_ELSE
+%precedence ELSE
+%left EQ NE                       /* binds looser than the orderings, as in C */
+%left '<' '>' LE GE
 %left '+' '-'
 %left '*' '/'
+%precedence UMINUS                   /* -2 * 3 is (-2) * 3; see the rule's comment */
 
 %%
 
 /* --------------------------------------------------------------------
  * THE GRAMMAR (as implemented below)
  *
- *     program     ->  stmt_list
+ *     program     ->  top_list
+ *     top_list    ->  top_item  |  top_list top_item
+ *     top_item    ->  func_def  |  stmt
+ *     func_def    ->  ('int' | 'void') ID '(' params ')' block
+ *     params      ->  (empty)  |  'void'  |  param_list
+ *     param_list  ->  param  |  param_list ',' param
+ *     param       ->  'int' ID  |  'int' ID '[' ']'
+ *     block       ->  '{' '}'  |  '{' stmt_list '}'
  *     stmt_list   ->  stmt  |  stmt_list stmt
- *     stmt        ->  decl  |  assign  |  print_stmt  |  error ';'
+ *     stmt        ->  decl  |  assign  |  print_stmt  |  return_stmt
+ *                  |  if_stmt  |  block  |  func_call ';'  |  error ';'
  *     decl        ->  'int' ID ';'  |  'int' ID '=' expr ';'
- *     assign      ->  ID '=' expr ';'
- *     expr        ->  NUM  |  ID  |  expr '+' expr  |  expr '-' expr
- *                  |  expr '*' expr  |  '(' expr ')'
+ *                  |  'int' ID '[' NUM ']' ';'
+ *     assign      ->  ID '=' expr ';'  |  ID '[' expr ']' '=' expr ';'
+ *     return_stmt ->  'return' expr ';'  |  'return' ';'
+ *     if_stmt     ->  'if' '(' expr ')' stmt  [ 'else' stmt ]
+ *     expr        ->  NUM  |  ID  |  ID '[' expr ']'  |  func_call
+ *                  |  expr ('+' | '-' | '*' | '/') expr
+ *                  |  expr ('<' | '>' | '<=' | '>=' | '==' | '!=') expr
+ *                  |  '-' expr  |  '(' expr ')'
+ *     func_call   ->  ID '(' args ')'
+ *     args        ->  (empty)  |  arg_list
+ *     arg_list    ->  expr  |  arg_list ',' expr
  *     print_stmt  ->  'print' '(' expr ')' ';'
  *
- * The expression grammar is ambiguous on purpose; the %left declarations
- * above resolve it: '*' binds tighter than '+'/'-', and all three are left
- * associative, so  a - b - c  parses as (a - b) - c.  Writing the grammar
+ * The expression grammar is ambiguous on purpose; the precedence table above
+ * resolves it: '*' and '/' bind tighter than '+' and '-', and all four are
+ * left associative, so  a - b - c  parses as (a - b) - c.  Writing the grammar
  * this way keeps it short and keeps the AST free of the extra
  * term/factor nodes an unambiguous grammar would need.
  *
@@ -149,6 +182,16 @@ static int  endsStatement(int tok);
  *
  *   'int x = e;' is sugar.  It becomes a DECL followed by an ASSIGN, so no
  *   later phase needs a special case for initialized declarations.
+ *
+ *   top_item accepts a statement as well as a function.  That is what keeps
+ *   the Project 2 programs compiling: a file with no functions is still one
+ *   implicit main().  In a file that DOES define functions, semantic.c
+ *   rejects executable statements outside them.  The rule lives there, not
+ *   here, because it can then be reported with a useful message.
+ *
+ *   if/else is not on the Project 3 feature list, but factorial(5) is, and
+ *   recursion cannot stop without a conditional.  So `if` and the comparison
+ *   operators are here, as the smallest addition that meets that requirement.
  *
  *   Memory.  The scanner strdup's every identifier; the AST constructors
  *   copy it again, so each rule that receives an ID frees its copy.
@@ -167,8 +210,67 @@ static int  endsStatement(int tok);
 /* -- PROGRAM ------------------------------------------------------------
  * The ONLY rule that assigns the global `root`. */
 program:
-    stmt_list           { if (syntaxErrors > 0) YYABORT;   /* recovered, but still a failed parse */
+    top_list            { if (syntaxErrors > 0) YYABORT;   /* recovered, but still a failed parse */
                           root = $1; $$ = $1; }
+    ;
+
+/* -- TOP LEVEL ----------------------------------------------------------
+ * The file as a list.  Same shape as stmt_list, so a file of plain statements
+ * builds exactly the tree it built in Project 2. */
+top_list:
+    top_item            { $$ = $1; }
+    | top_list top_item { $$ = ($2 == NULL) ? $1 : ($1 == NULL) ? $2
+                                            : createStmtList($1, $2); }
+    ;
+
+top_item:
+    func_def            { $$ = $1; }
+    | stmt              { $$ = $1; }
+    ;
+
+/* -- FUNCTION DEFINITION -> NODE_FUNC_DEF --------------------------------
+ *   int f(int a, int b[]) { ... }     void g() { ... }
+ * `int ID` also begins a variable declaration.  An LALR(1) parser sees no
+ * conflict: it shifts both rules' common prefix and the next token, '(' here
+ * or ';', '=', '[' in decl, picks the rule.
+ *
+ * The block is unwrapped ($6->data.block): the body shares one scope with the
+ * parameters, so `int f(int a) { int a; }` is a duplicate declaration. */
+func_def:
+    INT ID '(' params ')' block
+        { $$ = createFuncDef($2, 0, $4, $6->data.block);
+          $$->lineno = @2.first_line; free($2); }
+    | VOID ID '(' params ')' block
+        { $$ = createFuncDef($2, 1, $4, $6->data.block);
+          $$->lineno = @2.first_line; free($2); }
+    ;
+
+/* -- PARAMETERS -> NODE_PARAM_LIST of NODE_PARAM -------------------------
+ * NULL means none: `f()` and `f(void)` mean the same thing. */
+params:
+    %empty              { $$ = NULL; }
+    | VOID              { $$ = NULL; }
+    | param_list        { $$ = $1; }
+    ;
+
+param_list:
+    param                       { $$ = createParamList(NULL, $1); }
+    | param_list ',' param      { $$ = createParamList($1, $3); }
+    ;
+
+/* `int a[]` has no size, because arrays are passed BY REFERENCE: the callee
+ * gets the base address of the caller's array, so nothing here depends on
+ * how long that array is. */
+param:
+    INT ID              { $$ = createParam($2, 0); $$->lineno = @2.first_line; free($2); }
+    | INT ID '[' ']'    { $$ = createParam($2, 1); $$->lineno = @2.first_line; free($2); }
+    ;
+
+/* -- BLOCK -> NODE_BLOCK -------------------------------------------------
+ * A node with no job at run time: it exists because it opens a SCOPE. */
+block:
+    '{' '}'             { $$ = createBlock(NULL); }
+    | '{' stmt_list '}' { $$ = createBlock($2); }
     ;
 
 /* -- STATEMENT LIST -----------------------------------------------------
@@ -185,6 +287,10 @@ stmt:
     decl                { $$ = $1; }
     | assign            { $$ = $1; }
     | print_stmt        { $$ = $1; }
+    | return_stmt       { $$ = $1; }
+    | if_stmt           { $$ = $1; }
+    | block             { $$ = $1; }
+    | func_call ';'     { $$ = $1; }            /* called for its effect */
     /* PANIC-MODE RECOVERY: when no more specific rule fits, skip ahead to the
      * next ';' and carry on.  Without this the parser would give up at the
      * first mistake and every later error would go unreported. */
@@ -201,6 +307,17 @@ decl:
     | INT ID '=' expr ';'
         { $$ = createStmtList(createDecl("int", $2), createAssign($2, $4));
           free($2); }
+    /* int a[10];  -> NODE_ARRAY_DECL.  The size is a literal: the compiler
+     * must know at compile time how many bytes to reserve.  The negative form
+     * is grammatical only so that semantic.c can reject `int a[-3];` with a
+     * message about array sizes rather than a generic syntax error. */
+    | INT ID '[' NUM ']' ';'
+        { $$ = createArrayDecl($2, $4); $$->lineno = @2.first_line; free($2); }
+    | INT ID '[' '-' NUM ']' ';'
+        { $$ = createArrayDecl($2, -$5); $$->lineno = @2.first_line; free($2); }
+    | INT ID '[' NUM ']' error
+        { MISSING_SEMI("missing ';' after the declaration of array '%s'", $2);
+          free($2); $$ = NULL; }
     /* error productions: name the mistake instead of "syntax error" */
     | INT ID error
         { MISSING_SEMI("missing ';' after the declaration of '%s'", $2);
@@ -218,29 +335,93 @@ assign:
     | ID '=' expr error
         { MISSING_SEMI("missing ';' after the assignment to '%s'", $1);
           free($1); $$ = NULL; }
+    /* a[i] = expr;  -> NODE_ASSIGN whose target is a NODE_ARRAY_INDEX tree */
+    | ID '[' expr ']' '=' expr ';'
+        { ASTNode* target = createArrayIndex($1, $3);
+          target->lineno = @1.first_line;
+          $$ = createArrayAssign(target, $6);
+          $$->lineno = @1.first_line; free($1); }
+    | ID '[' expr ']' '=' expr error
+        { MISSING_SEMI("missing ';' after the assignment to an element of '%s'", $1);
+          free($1); $$ = NULL; }
+    ;
+
+/* -- RETURN -> NODE_RETURN -----------------------------------------------
+ * Both forms parse anywhere; whether one is LEGAL here (inside a function,
+ * and matching its return type) is a question of meaning, so semantic.c
+ * decides it. */
+return_stmt:
+    RETURN expr ';'     { $$ = createReturn($2);   $$->lineno = @1.first_line; }
+    | RETURN ';'        { $$ = createReturn(NULL); $$->lineno = @1.first_line; }
+    | RETURN expr error
+        { MISSING_SEMI("missing ';' after the return statement"); $$ = NULL; }
+    ;
+
+/* -- IF -> NODE_IF -------------------------------------------------------
+ * %prec LOWER_THAN_ELSE resolves the dangling else as described above. */
+if_stmt:
+    IF '(' expr ')' stmt %prec LOWER_THAN_ELSE
+        { $$ = createIf($3, $5, NULL); $$->lineno = @1.first_line; }
+    | IF '(' expr ')' stmt ELSE stmt
+        { $$ = createIf($3, $5, $7);   $$->lineno = @1.first_line; }
     ;
 
 /* -- EXPRESSIONS --------------------------------------------------------
  *   NUM, ID              leaves of the tree
  *   expr '+' expr        the starter operator; left associative
  *   expr '-' expr        same shape, different operator char
- *   expr '*' expr        binds tighter than + and - (see the %left table)
+ *   expr '*' expr        bind tighter than + and - (see the precedence table)
+ *   expr '/' expr
+ *   comparisons          yield 1 or 0.  Two-character operators are packed
+ *                        into one char: 'L' <=, 'G' >=, 'E' ==, 'N' != (ast.c)
+ *   '-' expr             unary minus: NODE_BINOP with op 'u' and no right
+ *                        operand.  %prec UMINUS is what makes -2 * 3 parse as
+ *                        (-2) * 3: without it the rule would inherit binary
+ *                        '-' precedence, which is lower than '*'.
  *   '(' expr ')'         no node of its own: parentheses only steer the
  *                        parse, so we pass the inner tree straight up
- *
- * NOTE: '-' and '*' also need a rule in scanner.l  ("-" { return '-'; })
- *       before the scanner will hand them to the parser. */
+ *   ID '[' expr ']'      an array element -> NODE_ARRAY_INDEX
+ *   func_call            a call used for its value -> NODE_FUNC_CALL */
 expr:
     NUM                 { $$ = createNum($1); }
-    | ID                { $$ = createVar($1); free($1); }
+    | ID                { $$ = createVar($1); $$->lineno = @1.first_line; free($1); }
+    | ID '[' expr ']'   { $$ = createArrayIndex($1, $3); $$->lineno = @1.first_line; free($1); }
+    | func_call         { $$ = $1; }
     | expr '+' expr     { $$ = createBinOp('+', $1, $3); }
     | expr '-' expr     { $$ = createBinOp('-', $1, $3); }
     | expr '*' expr     { $$ = createBinOp('*', $1, $3); }
+    | expr '/' expr     { $$ = createBinOp('/', $1, $3); }
+    | expr '<' expr     { $$ = createBinOp('<', $1, $3); }
+    | expr '>' expr     { $$ = createBinOp('>', $1, $3); }
+    | expr LE expr      { $$ = createBinOp('L', $1, $3); }
+    | expr GE expr      { $$ = createBinOp('G', $1, $3); }
+    | expr EQ expr      { $$ = createBinOp('E', $1, $3); }
+    | expr NE expr      { $$ = createBinOp('N', $1, $3); }
+    | '-' expr %prec UMINUS { $$ = createBinOp('u', $2, NULL); }
     | '(' expr ')'      { $$ = $2; }
     /* an operator with nothing after it:  y = 5 + ;  */
     | expr '+' error    { diagnose("expected a value after '+'");  yyerrok; $$ = $1; }
     | expr '-' error    { diagnose("expected a value after '-'");  yyerrok; $$ = $1; }
     | expr '*' error    { diagnose("expected a value after '*'");  yyerrok; $$ = $1; }
+    | expr '/' error    { diagnose("expected a value after '/'");  yyerrok; $$ = $1; }
+    ;
+
+/* -- FUNCTION CALL -> NODE_FUNC_CALL -------------------------------------
+ * Arguments stay in source order: which value lands in which $a register
+ * is part of the calling convention. */
+func_call:
+    ID '(' args ')'
+        { $$ = createFuncCall($1, $3); $$->lineno = @1.first_line; free($1); }
+    ;
+
+args:
+    %empty              { $$ = NULL; }
+    | arg_list          { $$ = $1; }
+    ;
+
+arg_list:
+    expr                    { $$ = createArgList(NULL, $1); }
+    | arg_list ',' expr     { $$ = createArgList($1, $3); }
     ;
 
 /* -- PRINT --------------------------------------------------------------
@@ -322,7 +503,8 @@ static void diagnose(const char* fmt, ...) {
 
 /* Could this token be the FIRST token of a new statement? */
 static int endsStatement(int tok) {
-    return tok == INT || tok == PRINT || tok == ID || tok == YYEOF;
+    return tok == INT || tok == VOID || tok == PRINT || tok == RETURN ||
+           tok == IF  || tok == ID   || tok == '{'   || tok == '}'    || tok == YYEOF;
 }
 
 /* Called by Bison the moment it detects a mistake. */
