@@ -1,0 +1,33 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Undeclared Variable                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 11
+  ❌ Error: Variable 'ghost' is used before being declared
+  💡 Suggestion: Add a declaration before using this variable:
+     → int ghost;  (add this before line 11)
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Undeclared Variable                      ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 12
+  ❌ Error: Variable 'missing' is used before being declared
+  💡 Suggestion: Add a declaration before using this variable:
+     → int missing;  (add this before line 12)
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Array Used As Value                       ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 13
+  ❌ Error: 'a' is an array and has no single value
+  💡 Suggestion: use an element, such as a[0]
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Void Value Used                           ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 14
+  ❌ Error: Function 'nothing' is void, so its call has no value to use
+

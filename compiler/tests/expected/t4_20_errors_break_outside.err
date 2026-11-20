@@ -1,0 +1,24 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Break Outside Loop                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 8
+  ❌ Error: 'break' is not inside any loop
+  💡 Suggestion: use it only inside a while or for loop
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Continue Outside Loop                     ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 10
+  ❌ Error: 'continue' is not inside any loop
+  💡 Suggestion: use it only inside a while or for loop
+
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Break Outside Loop                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 14
+  ❌ Error: 'break' is not inside any loop
+  💡 Suggestion: use it only inside a while or for loop
+

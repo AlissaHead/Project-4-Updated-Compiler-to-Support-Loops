@@ -1,0 +1,30 @@
+/* Expected output: 1  2  3  3
+ * Regression test for a bug found by random differential testing against gcc.
+ *
+ * At a label or jump the code generator skips writing a compiler temporary
+ * back to memory when nothing will read it again.  The first version assumed
+ * no temporary is ever read after a branch, which turned out to be false.
+ * For  c = c + 1; if (show) print(c);  the TAC is
+ *       t0 = c + 1
+ *       c = t0
+ *       IF_FALSE show GOTO L
+ *       PRINT c
+ * and copy propagation rewrites PRINT c into PRINT t0, so t0 is still needed
+ * on the fall-through path after the branch.  Dropping it printed garbage.
+ * The fix checks each temporary individually (tempReadAhead in codegen.c).
+ * Prints 1 2 3 inside the loop, then c = 3. */
+int show;
+
+int main() {
+    int c;
+    show = 1;
+    c = 0;
+    while (c < 3) {
+        c = c + 1;
+        if (show) {
+            print(c);
+        }
+    }
+    print(c);
+    return 0;
+}

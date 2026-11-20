@@ -1,0 +1,8 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * A flat program (no functions) can use loops too, but a top-level break is
+ * still outside any loop.  Expected: an error on line 7. */
+int i;
+i = 0;
+while (i < 3) { i = i + 1; }
+break;
+print(i);

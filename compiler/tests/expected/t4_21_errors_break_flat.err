@@ -1,0 +1,8 @@
+
+╔════════════════════════════════════════════════════════════╗
+║ SEMANTIC ERROR - Break Outside Loop                        ║
+╚════════════════════════════════════════════════════════════╝
+  📍 Location: Line 7
+  ❌ Error: 'break' is not inside any loop
+  💡 Suggestion: use it only inside a while or for loop
+

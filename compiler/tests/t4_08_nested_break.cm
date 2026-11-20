@@ -1,0 +1,58 @@
+/* Expected output: 3  12  6  42  2
+ * break leaves the INNERMOST loop only, and nested loops get distinct labels.
+ *   inner break at j == 3: each of the 4 outer passes counts j = 0, 1, 2,
+ *     so each pass counts 3 (printed: 3) and the total is 4 * 3 = 12
+ *   break in the OUTER loop after its inner loop: outer stops at i == 2,
+ *     after 3 passes of the inner loop's 2 iterations: 6
+ *   three levels deep, breaking out of the middle one: each outer pass runs
+ *     j = 0..3 fully (3 + 1 each = 16), then j = 4 adds 3 and breaks (19),
+ *     then adds 2 (21).  Two outer passes: 42
+ *   a break inside an if inside a while: stops at n == 2 */
+int main() {
+    int i;
+    int j;
+    int k;
+    int per;
+    int total;
+    int n;
+    total = 0;
+    for (i = 0; i < 4; i = i + 1) {
+        per = 0;
+        for (j = 0; j < 10; j = j + 1) {
+            if (j == 3) break;
+            per = per + 1;
+            total = total + 1;
+        }
+    }
+    print(per);
+    print(total);
+    total = 0;
+    for (i = 0; i < 10; i = i + 1) {
+        for (j = 0; j < 2; j = j + 1) {
+            total = total + 1;
+        }
+        if (i == 2) break;
+    }
+    print(total);
+    total = 0;
+    for (i = 0; i < 2; i = i + 1) {
+        for (j = 0; j < 100; j = j + 1) {
+            for (k = 0; k < 3; k = k + 1) {
+                total = total + 1;
+            }
+            if (j == 4) break;
+            total = total + 1;
+        }
+        total = total + 2;
+    }
+    print(total);
+    n = 0;
+    while (1) {
+        n = n + 1;
+        if (n == 2) {
+            break;
+        }
+    }
+    print(n);
+    return 0;
+}

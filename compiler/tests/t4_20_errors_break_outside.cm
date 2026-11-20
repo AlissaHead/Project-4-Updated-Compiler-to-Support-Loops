@@ -1,0 +1,18 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * break and continue outside any loop are SEMANTIC errors: each one matches
+ * its grammar rule, but only the surrounding context makes it legal.
+ * Expected: errors on lines 8, 10 and 14.  The break on line 12 is legal. */
+int f(int n) {
+    int i;
+    if (n > 0) {
+        break;
+    }
+    continue;
+    for (i = 0; i < n; i = i + 1) {
+        break;
+    }
+    break;
+    return 0;
+}
+
+int main() { return f(1); }

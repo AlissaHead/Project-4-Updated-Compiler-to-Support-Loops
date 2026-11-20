@@ -1,0 +1,53 @@
+/* Expected output: 10  5  4  15  40  3
+ * The forms a for loop can take.
+ *   all three parts empty:  for (;;) with a break counts to 10
+ *   no init (i set before) and no update (done in the body): 5
+ *   the loop variable keeps its final value after the loop: 4
+ *   an array element as the loop variable (init and update): 0+1+2+3+4+5 = 15
+ *   an array filled by one loop (a[i] = 4i) and summed by another:
+ *     4 * (0 + 1 + 2 + 3 + 4) = 40
+ *   a while loop whose condition reads a global that only a function called
+ *     in the body changes: 3 */
+int g;
+int bump() { g = g + 1; return g; }
+
+int main() {
+    int i;
+    int n;
+    int s;
+    int a[5];
+    int c[1];
+    n = 0;
+    for (;;) {
+        n = n + 1;
+        if (n == 10) break;
+    }
+    print(n);
+    i = 0;
+    for (; i < 5;) {
+        i = i + 1;
+    }
+    print(i);
+    for (i = 0; i < 4; i = i + 1) {
+    }
+    print(i);
+    s = 0;
+    for (c[0] = 0; c[0] <= 5; c[0] = c[0] + 1) {
+        s = s + c[0];
+    }
+    print(s);
+    for (i = 0; i < 5; i = i + 1) {
+        a[i] = i * 4;
+    }
+    s = 0;
+    for (i = 0; i < 5; i = i + 1) {
+        s = s + a[i];
+    }
+    print(s);
+    g = 0;
+    while (g < 3) {
+        bump();
+    }
+    print(g);
+    return 0;
+}

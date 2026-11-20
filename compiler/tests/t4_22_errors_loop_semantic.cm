@@ -1,0 +1,16 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Loop parts are checked like any other code.
+ * Expected:
+ *   line 11  undeclared variable in a while condition
+ *   line 12  undeclared variable in a for initializer
+ *   line 13  an array used as a loop condition
+ *   line 14  a void function's result used as a for condition */
+void nothing() { }
+int main() {
+    int a[3];
+    while (ghost < 3) { }
+    for (missing = 0; 1; ) { break; }
+    while (a) { break; }
+    for (; nothing(); ) { }
+    return 0;
+}

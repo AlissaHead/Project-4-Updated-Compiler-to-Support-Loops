@@ -268,6 +268,46 @@ int main(void) {
     check("a cycle of jumps terminates and is still an infinite loop",
           LINES("FUNC_BEGIN main", "L1:", "GOTO L1", "FUNC_END main"));
 
+    /* ---------------- loops (Project 4) -------------------------------- */
+    /* x = 0; while (x < 3) { print(x); x = x + 1; } print(x);
+     * x = 0 is true only on the path INTO the loop, not on the back edge, so
+     * nothing may change.  With the "forget at a label" rule removed, x < 3
+     * folds to 0 < 3, the test disappears, and the loop never ends. */
+    initTAC();
+    E(TAC_FUNC_BEGIN, NULL, NULL, "main");
+    E(TAC_DECL, "int", NULL, "x");
+    E(TAC_ASSIGN, "0", NULL, "x");
+    E(TAC_LABEL, NULL, NULL, "L0");
+    E(TAC_LT, "x", "3", "t0");
+    E(TAC_IF_FALSE, "t0", "L1", NULL);
+    E(TAC_PRINT, "x", NULL, NULL);
+    E(TAC_ADD, "x", "1", "t1");
+    E(TAC_ASSIGN, "t1", NULL, "x");
+    E(TAC_GOTO, "L0", NULL, NULL);           /* the back edge */
+    E(TAC_LABEL, NULL, NULL, "L1");
+    E(TAC_PRINT, "x", NULL, NULL);
+    E(TAC_RETURN, "0", NULL, NULL);
+    E(TAC_FUNC_END, NULL, NULL, "main");
+    check("a value set before a loop is not propagated past the loop's label",
+          LINES("FUNC_BEGIN main", "DECL int x", "x = 0", "L0:", "t0 = x < 3",
+                "IF_FALSE t0 GOTO L1", "PRINT x", "t1 = x + 1", "x = t1", "GOTO L0",
+                "L1:", "PRINT x", "RETURN 0", "FUNC_END main"));
+
+    /* while (1) { print(1); break; }  -- the test, the back edge, and both
+     * labels all disappear, leaving straight-line code */
+    initTAC();
+    E(TAC_FUNC_BEGIN, NULL, NULL, "main");
+    E(TAC_LABEL, NULL, NULL, "L0");
+    E(TAC_IF_FALSE, "1", "L1", NULL);        /* never taken */
+    E(TAC_PRINT, "1", NULL, NULL);
+    E(TAC_GOTO, "L1", NULL, NULL);           /* break */
+    E(TAC_GOTO, "L0", NULL, NULL);           /* back edge, now unreachable */
+    E(TAC_LABEL, NULL, NULL, "L1");
+    E(TAC_RETURN, "0", NULL, NULL);
+    E(TAC_FUNC_END, NULL, NULL, "main");
+    check("while (1) with an unconditional break collapses to straight-line code",
+          LINES("FUNC_BEGIN main", "PRINT 1", "RETURN 0", "FUNC_END main"));
+
     printf("\n  %d case(s), %d failure(s)\n", cases, failures);
     return failures ? 1 : 0;
 }

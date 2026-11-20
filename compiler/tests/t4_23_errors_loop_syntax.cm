@@ -1,0 +1,12 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Syntax errors in loops, all reported in one run.
+ * Expected: errors on lines 8, 9 and 10. */
+int main() {
+    int i;
+    i = 0;
+    while (i < 3) { i = i + 1; }
+    for (i = 0 i < 3; i = i + 1) { }
+    while (i < 3) { break }
+    for (int j = 0; j < 3; j = j + 1) { }
+    return 0;
+}

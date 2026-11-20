@@ -1,0 +1,33 @@
+/* Expected output: 0  5  0  7  3
+ * Loops test at the TOP, so a loop whose condition is false on entry runs
+ * its body zero times.  If the test were emitted at the bottom (a do-while),
+ * every body here would run once and the output would change.
+ *   while with a false condition:   count stays 0
+ *   ...and the variable it would have changed is untouched: 5
+ *   for with a false condition:     count stays 0
+ *   the for loop's init still runs once, even with zero iterations: i = 7
+ *   a loop whose condition becomes false after 3 passes: 3 */
+int main() {
+    int count;
+    int i;
+    int x;
+    count = 0;
+    x = 5;
+    while (x > 10) {
+        count = count + 1;
+        x = 0;
+    }
+    print(count);
+    print(x);
+    for (i = 7; i < 3; i = i + 1) {
+        count = count + 1;
+    }
+    print(count);
+    print(i);
+    i = 0;
+    while (i < 3) {
+        i = i + 1;
+    }
+    print(i);
+    return 0;
+}

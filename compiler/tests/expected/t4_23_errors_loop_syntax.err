@@ -1,0 +1,9 @@
+Syntax Error at line 8, column 16: syntax error, unexpected identifier, expecting ';'
+     8 |     for (i = 0 i < 3; i = i + 1) { }
+       |                ^
+Syntax Error at line 9, column 26: missing ';' after break
+     9 |     while (i < 3) { break }
+       |                          ^
+Syntax Error at line 10, column 10: syntax error, unexpected int, expecting identifier or ';'
+    10 |     for (int j = 0; j < 3; j = j + 1) { }
+       |          ^

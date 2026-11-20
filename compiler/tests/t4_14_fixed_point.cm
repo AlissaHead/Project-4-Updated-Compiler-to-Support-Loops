@@ -1,0 +1,24 @@
+/* Expected output: 20
+ * Why the optimizer runs to a FIXED POINT.  This is the listing from class
+ * activity 4.  Compare:
+ *     ./minicompiler tests/t4_14_fixed_point.cm out.s -onepass
+ *     ./minicompiler tests/t4_14_fixed_point.cm out.s
+ * One pass leaves 12 TAC instructions: it folds and propagates, simplifies
+ * the branch, and removes print(999), but `print(k)` sits behind the label
+ * L0, where the optimizer has to forget that k is 20.  The label only goes
+ * away once the goto in front of it is gone, which takes further passes.
+ * Running to a fixed point (5 passes) leaves 7, and the program is just
+ * print(20). */
+int main() {
+    int n;
+    int m;
+    int k;
+    n = 4 * 5;
+    m = n + 0;
+    k = m * 1;
+    if (7 - 7) {
+        print(999);
+    }
+    print(k);
+    return 0;
+}

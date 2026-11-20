@@ -1,0 +1,38 @@
+/* Expected output: 0  1  2  3  10  6  30
+ * The optimizer must forget what it knows at a label.  Each value here would
+ * be WRONG if a constant learned before a loop were carried into it.
+ *   x starts at 0 and changes inside the loop: prints 0 1 2, then 3 after.
+ *     A broken optimizer would print 0 0 0 (x = 0 propagated into the body)
+ *     or loop forever (x < 3 folded to 0 < 3, always true).
+ *   y = 10 before a loop that never assigns y: still 10.
+ *   a variable assigned in an if INSIDE a loop: 6.
+ *   constants inside the loop body are still folded (2 * 3 here): 30 */
+int main() {
+    int x;
+    int y;
+    int z;
+    int i;
+    int s;
+    x = 0;
+    while (x < 3) {
+        print(x);
+        x = x + 1;
+    }
+    print(x);
+    y = 10;
+    for (i = 0; i < 3; i = i + 1) {
+        z = i;
+    }
+    print(y);
+    z = 0;
+    for (i = 0; i < 4; i = i + 1) {
+        if (i > 0) z = z + i;
+    }
+    print(z);
+    s = 0;
+    for (i = 0; i < 5; i = i + 1) {
+        s = s + 2 * 3;
+    }
+    print(s);
+    return 0;
+}
