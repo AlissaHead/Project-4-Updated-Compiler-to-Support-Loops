@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: semantic.c   —   Phase 3 — Semantic analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -17,7 +17,8 @@
  *   Errors are reported with line numbers.
  *
  * CREDITS
- *   Scope stack, two-pass analysis and all semantic checks: Alissa Head.
+ *   Scope stack, two-pass analysis and all semantic checks, including the
+ *   loop-depth check for break and continue: Alissa Head.
  * ========================================================================= */
 
 /* SEMANTIC ANALYSIS IMPLEMENTATION - WITH FUNCTION SUPPORT
@@ -84,6 +85,8 @@ static int functionCount = 0;
 static FuncEntry* currentFunc = NULL;   /* NULL outside any function body  */
 static int programHasFunctions = 0;     /* 0 = Project 2 style flat program */
 static int uniqueCounter = 0;           /* Numbers the `x.N` spellings      */
+static int loopDepth = 0;               /* Loops enclosing the current
+                                         * statement; break needs one       */
 
 /* Initialize semantic analyzer */
 void initSemantic() {
@@ -94,6 +97,7 @@ void initSemantic() {
     currentFunc = NULL;
     programHasFunctions = 0;
     uniqueCounter = 0;
+    loopDepth = 0;
 
     trace("SEMANTIC ANALYZER: initialized\n\n");
 }
@@ -556,6 +560,38 @@ static void checkStmt(ASTNode* node) {
             checkStmt(node->data.ifstmt.elseStmt);
             break;
 
+        case NODE_WHILE:
+        case NODE_FOR:
+            /* The init, condition and update are checked OUTSIDE the depth
+             * count: only the body is "inside the loop".  (The grammar keeps
+             * break out of those parts anyway, since they are expressions and
+             * assignments, never statements.) */
+            checkStmt(node->data.loop.init);
+            checkExpr(node->data.loop.cond);
+            checkStmt(node->data.loop.update);
+            loopDepth++;
+            checkStmt(node->data.loop.body);
+            loopDepth--;
+            break;
+
+        case NODE_BREAK:
+        case NODE_CONTINUE:
+            /* The smallest example of a context-sensitive rule.  `break;`
+             * matches its grammar rule wherever it appears; whether it is
+             * inside a loop depends on what surrounds it, which a context-free
+             * production cannot see.  A depth counter settles it here. */
+            if (loopDepth == 0) {
+                const char* word = node->type == NODE_BREAK ? "break" : "continue";
+                semanticError(node->type == NODE_BREAK ? "Break Outside Loop"
+                                                       : "Continue Outside Loop",
+                              node->lineno, "use it only inside a while or for loop",
+                              "'%s' is not inside any loop", word);
+            } else {
+                trace("  ✓ %s is inside a loop (line %d)\n",
+                      node->type == NODE_BREAK ? "break" : "continue", node->lineno);
+            }
+            break;
+
         case NODE_STMT_LIST:
             checkStmtList(node);
             break;
@@ -663,6 +699,7 @@ static void registerFunctions(ASTNode* node) {
  * parameter in the body is a duplicate rather than a shadow. */
 static void checkFuncDef(ASTNode* node) {
     currentFunc = findFunction(node->data.funcdef.name);
+    loopDepth = 0;      /* a loop around a CALL does not enclose the callee */
     trace("\nEntering function '%s'\n", node->data.funcdef.name);
 
     enterScope();
