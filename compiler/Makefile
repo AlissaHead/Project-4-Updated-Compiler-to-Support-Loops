@@ -6,6 +6,7 @@
 #                   with tests/expected/ (PASS/FAIL per test)
 #   make unittest   unit tests for the TAC optimizer and the peephole pass
 #   make check      both of the above
+#   make bench      measure optimized vs unoptimized on benchmarks/hot_loop.cm
 #   make clean      remove everything that `make` produced
 #
 # The two generated files are worth knowing about:
@@ -85,4 +86,9 @@ clean:
 	rm -f $(TARGET) $(OBJS) lex.yy.c parser.tab.c parser.tab.h parser.output
 	rm -f tests/*.s tests/*.tac *.s *.tac $(UNIT)
 
-.PHONY: all clean test unittest check
+# Code size and instructions executed, optimized vs unoptimized (see the
+# comment at the top of benchmarks/measure.sh for the method)
+bench: $(TARGET)
+	@bash benchmarks/measure.sh
+
+.PHONY: all clean test unittest check bench
