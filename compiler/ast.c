@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: ast.c   —   Phase 2 — Syntax analysis (the tree it builds)
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -182,6 +182,29 @@ ASTNode* createIf(ASTNode* cond, ASTNode* thenStmt, ASTNode* elseStmt) {
     return node;
 }
 
+/* Create a while loop */
+ASTNode* createWhile(ASTNode* cond, ASTNode* body) {
+    ASTNode* node = newNode(NODE_WHILE);
+    node->data.loop.cond = cond;
+    node->data.loop.body = body;
+    return node;
+}
+
+/* Create a for loop; init, cond and update may each be NULL */
+ASTNode* createFor(ASTNode* init, ASTNode* cond, ASTNode* update, ASTNode* body) {
+    ASTNode* node = newNode(NODE_FOR);
+    node->data.loop.init   = init;
+    node->data.loop.cond   = cond;
+    node->data.loop.update = update;
+    node->data.loop.body   = body;
+    return node;
+}
+
+/* break and continue carry no data: WHICH loop they refer to is decided by
+ * context, in semantic.c (is there one?) and tac.c (which label?). */
+ASTNode* createBreak(void)    { return newNode(NODE_BREAK); }
+ASTNode* createContinue(void) { return newNode(NODE_CONTINUE); }
+
 /* Create an array declaration.  The size is stored exactly as written, even
  * if it is nonsense: rejecting int a[0] is semantic.c's job, with a line
  * number, not the parser's. */
@@ -319,6 +342,29 @@ void printAST(ASTNode* node, int level) {
                 printf("ELSE\n");
                 printAST(node->data.ifstmt.elseStmt, level + 1);
             }
+            break;
+        case NODE_WHILE:
+            printf("WHILE\n");
+            printAST(node->data.loop.cond, level + 1);
+            printAST(node->data.loop.body, level + 1);
+            break;
+        case NODE_FOR:
+            /* label each part: any of them may be missing */
+            printf("FOR\n");
+            indent(level + 1); printf("init:%s\n",   node->data.loop.init   ? "" : " (none)");
+            printAST(node->data.loop.init, level + 2);
+            indent(level + 1); printf("cond:%s\n",   node->data.loop.cond   ? "" : " (always true)");
+            printAST(node->data.loop.cond, level + 2);
+            indent(level + 1); printf("update:%s\n", node->data.loop.update ? "" : " (none)");
+            printAST(node->data.loop.update, level + 2);
+            indent(level + 1); printf("body:\n");
+            printAST(node->data.loop.body, level + 2);
+            break;
+        case NODE_BREAK:
+            printf("BREAK\n");
+            break;
+        case NODE_CONTINUE:
+            printf("CONTINUE\n");
             break;
         default:
             printf("UNKNOWN NODE TYPE %d\n", node->type);

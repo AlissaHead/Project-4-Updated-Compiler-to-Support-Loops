@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: scanner.l   —   Phase 1 — Lexical analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -104,12 +104,14 @@ static void trackPosition(const char* text, int len) {
 "if"            { return IF; }
 "else"          { return ELSE; }
 
-    /* Reserved for later milestones.  They have no grammar rule yet, so using
-     * one is a syntax error that names the keyword, instead of the word
-     * silently becoming a variable that a later milestone would then break. */
 "while"         { return WHILE; }
 "for"           { return FOR; }
 "break"         { return BREAK; }
+"continue"      { return CONTINUE; }
+
+    /* Reserved for a later milestone.  They have no grammar rule yet, so using
+     * one is a syntax error that names the keyword, instead of the word
+     * silently becoming a variable that a later milestone would then break. */
 "switch"        { return SWITCH; }
 "case"          { return CASE; }
 "default"       { return DEFAULT; }

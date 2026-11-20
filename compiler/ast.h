@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: ast.h   —   Phase 2 — Syntax analysis (the tree it builds)
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -47,6 +47,10 @@ typedef enum {
     NODE_ARRAY_DECL,  /* Array declaration (e.g., int a[10]) */
     NODE_ARRAY_INDEX, /* Array element (e.g., a[i]) */
     NODE_IF,          /* if (c) s  or  if (c) s else s */
+    NODE_WHILE,       /* while (c) s */
+    NODE_FOR,         /* for (init; c; update) s */
+    NODE_BREAK,       /* break;    leaves the innermost loop */
+    NODE_CONTINUE,    /* continue; starts the innermost loop's next iteration */
 } NodeType;
 
 /* AST NODE STRUCTURE
@@ -143,6 +147,16 @@ typedef struct ASTNode {
             struct ASTNode* thenStmt;
             struct ASTNode* elseStmt;   /* NULL when there is no else */
         } ifstmt;
+
+        /* while and for loops (NODE_WHILE, NODE_FOR).  A while uses only
+         * cond and body.  Any of init, cond and update may be NULL in a for;
+         * a NULL cond means "always true". */
+        struct {
+            struct ASTNode* init;       /* an ASSIGN, run once before the loop */
+            struct ASTNode* cond;
+            struct ASTNode* update;     /* an ASSIGN, run after each iteration */
+            struct ASTNode* body;
+        } loop;
     } data;
 } ASTNode;
 
@@ -169,6 +183,10 @@ ASTNode* createReturn(ASTNode* expr);
 /* Control flow nodes */
 ASTNode* createBlock(ASTNode* stmts);
 ASTNode* createIf(ASTNode* cond, ASTNode* thenStmt, ASTNode* elseStmt);
+ASTNode* createWhile(ASTNode* cond, ASTNode* body);
+ASTNode* createFor(ASTNode* init, ASTNode* cond, ASTNode* update, ASTNode* body);
+ASTNode* createBreak(void);
+ASTNode* createContinue(void);
 
 /* Array nodes.  There is no createArrayParam: an array parameter has no
  * size and reserves no elements, so it is a NODE_PARAM with isArray set. */

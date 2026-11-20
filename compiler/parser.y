@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: parser.y   —   Phase 2 — Syntax analysis
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -17,7 +17,8 @@
  *
  * CREDITS
  *   Prologue (%union, %token, precedence table, yyerror) from the CST-405 course starter code.
- *   Grammar rules, semantic actions and error productions: Alissa Head.
+ *   Grammar rules, semantic actions and error productions, including the
+ *   loop rules: Alissa Head.
  * ========================================================================= */
 
 %{
@@ -101,9 +102,11 @@ static int  endsStatement(int tok);
 %token IF "if" ELSE "else"
 %token LE "<=" GE ">=" EQ "==" NE "!="
 
-/* Reserved for later milestones: the scanner returns them, but no rule uses
- * them yet, so `int while;` is a syntax error that names the keyword. */
-%token WHILE "while" FOR "for" BREAK "break"
+/* Loop keywords (Project 4) */
+%token WHILE "while" FOR "for" BREAK "break" CONTINUE "continue"
+
+/* Reserved for a later milestone: the scanner returns them, but no rule uses
+ * them yet, so `int switch;` is a syntax error that names the keyword. */
 %token SWITCH "switch" CASE "case" DEFAULT "default"
 
 /* Track each token's source line (set in scanner.l) so that a node can record
@@ -114,6 +117,7 @@ static int  endsStatement(int tok);
 %type <node> program top_list top_item func_def params param_list param
 %type <node> stmt_list stmt block decl assign expr print_stmt return_stmt
 %type <node> if_stmt func_call args arg_list
+%type <node> while_stmt for_stmt for_assign for_cond jump_stmt
 
 /* OPERATOR PRECEDENCE AND ASSOCIATIVITY
  * Listed from lowest to highest precedence.
@@ -151,12 +155,18 @@ static int  endsStatement(int tok);
  *     block       ->  '{' '}'  |  '{' stmt_list '}'
  *     stmt_list   ->  stmt  |  stmt_list stmt
  *     stmt        ->  decl  |  assign  |  print_stmt  |  return_stmt
- *                  |  if_stmt  |  block  |  func_call ';'  |  error ';'
+ *                  |  if_stmt  |  while_stmt  |  for_stmt  |  jump_stmt
+ *                  |  block  |  func_call ';'  |  error ';'
  *     decl        ->  'int' ID ';'  |  'int' ID '=' expr ';'
  *                  |  'int' ID '[' NUM ']' ';'
  *     assign      ->  ID '=' expr ';'  |  ID '[' expr ']' '=' expr ';'
  *     return_stmt ->  'return' expr ';'  |  'return' ';'
  *     if_stmt     ->  'if' '(' expr ')' stmt  [ 'else' stmt ]
+ *     while_stmt  ->  'while' '(' expr ')' stmt
+ *     for_stmt    ->  'for' '(' for_assign ';' for_cond ';' for_assign ')' stmt
+ *     for_assign  ->  (empty)  |  ID '=' expr  |  ID '[' expr ']' '=' expr
+ *     for_cond    ->  (empty)  |  expr
+ *     jump_stmt   ->  'break' ';'  |  'continue' ';'
  *     expr        ->  NUM  |  ID  |  ID '[' expr ']'  |  func_call
  *                  |  expr ('+' | '-' | '*' | '/') expr
  *                  |  expr ('<' | '>' | '<=' | '>=' | '==' | '!=') expr
@@ -289,6 +299,9 @@ stmt:
     | print_stmt        { $$ = $1; }
     | return_stmt       { $$ = $1; }
     | if_stmt           { $$ = $1; }
+    | while_stmt        { $$ = $1; }
+    | for_stmt          { $$ = $1; }
+    | jump_stmt         { $$ = $1; }
     | block             { $$ = $1; }
     | func_call ';'     { $$ = $1; }            /* called for its effect */
     /* PANIC-MODE RECOVERY: when no more specific rule fits, skip ahead to the
@@ -364,6 +377,69 @@ if_stmt:
         { $$ = createIf($3, $5, NULL); $$->lineno = @1.first_line; }
     | IF '(' expr ')' stmt ELSE stmt
         { $$ = createIf($3, $5, $7);   $$->lineno = @1.first_line; }
+    ;
+
+/* -- WHILE -> NODE_WHILE -------------------------------------------------
+ *   while (cond) body
+ * The body is any statement, braced or not.  No dangling-else problem arises:
+ * a while has no optional tail, so an `else` can only belong to an `if`. */
+while_stmt:
+    WHILE '(' expr ')' stmt
+        { $$ = createWhile($3, $5); $$->lineno = @1.first_line; }
+    /* A broken condition: report it, then resume at the ')' so the body is
+     * still parsed.  Resuming at the next ';' instead (the general recovery
+     * rule) would swallow the body and hide the errors inside it. */
+    | WHILE '(' error ')' stmt
+        { flushSyntaxError(); yyerrok; $$ = NULL; }
+    ;
+
+/* -- FOR -> NODE_FOR -----------------------------------------------------
+ *   for (init; cond; update) body
+ * Each of the three parts may be empty, and an empty condition means "always
+ * true".  init and update are ASSIGNMENTS, never declarations or arbitrary
+ * expressions: assignment is a statement in this language, not an
+ * expression, so there is no i++ and no comma operator to parse.
+ *
+ * DESIGN DECISION: for gets its own node instead of being rewritten into a
+ * while by the parser.  The desugared form  init; while (cond) { body; update; }
+ * puts the update at the END OF THE BODY, so a `continue` (which jumps over
+ * the rest of the body) would also skip the update and never advance the
+ * loop.  Keeping the update separate gives `continue` a place to land. */
+for_stmt:
+    FOR '(' for_assign ';' for_cond ';' for_assign ')' stmt
+        { $$ = createFor($3, $5, $7, $9); $$->lineno = @1.first_line; }
+    /* A broken header, such as a missing ';' or a declaration in the init:
+     * one message, then resume at ')' as for while above. */
+    | FOR '(' error ')' stmt
+        { flushSyntaxError(); yyerrok; $$ = NULL; }
+    ;
+
+for_assign:
+    %empty                      { $$ = NULL; }
+    | ID '=' expr
+        { $$ = createAssign($1, $3); $$->lineno = @1.first_line; free($1); }
+    | ID '[' expr ']' '=' expr
+        { ASTNode* target = createArrayIndex($1, $3);
+          target->lineno = @1.first_line;
+          $$ = createArrayAssign(target, $6);
+          $$->lineno = @1.first_line; free($1); }
+    ;
+
+for_cond:
+    %empty                      { $$ = NULL; }      /* no test: loop until a break */
+    | expr                      { $$ = $1; }
+    ;
+
+/* -- BREAK, CONTINUE -> NODE_BREAK, NODE_CONTINUE ------------------------
+ * Both parse anywhere a statement can appear.  Whether one is LEGAL (inside a
+ * loop) depends on context the grammar cannot see, so semantic.c decides. */
+jump_stmt:
+    BREAK ';'           { $$ = createBreak();    $$->lineno = @1.first_line; }
+    | CONTINUE ';'      { $$ = createContinue(); $$->lineno = @1.first_line; }
+    | BREAK error
+        { MISSING_SEMI("missing ';' after break"); $$ = NULL; }
+    | CONTINUE error
+        { MISSING_SEMI("missing ';' after continue"); $$ = NULL; }
     ;
 
 /* -- EXPRESSIONS --------------------------------------------------------
@@ -504,7 +580,8 @@ static void diagnose(const char* fmt, ...) {
 /* Could this token be the FIRST token of a new statement? */
 static int endsStatement(int tok) {
     return tok == INT || tok == VOID || tok == PRINT || tok == RETURN ||
-           tok == IF  || tok == ID   || tok == '{'   || tok == '}'    || tok == YYEOF;
+           tok == IF  || tok == ID   || tok == '{'   || tok == '}'    ||
+           tok == WHILE || tok == FOR || tok == BREAK || tok == CONTINUE || tok == YYEOF;
 }
 
 /* Called by Bison the moment it detects a mistake. */
