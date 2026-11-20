@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: trace.h   —   Shared tracing helper
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT

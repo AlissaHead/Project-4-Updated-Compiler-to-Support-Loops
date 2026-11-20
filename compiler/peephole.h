@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: peephole.h   —   Phase 6b — peephole optimization of MIPS assembly
  * -------------------------------------------------------------------------
  * PIPELINE
