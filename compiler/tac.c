@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: tac.c   —   Phases 4 & 5 — Intermediate code and optimization
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -18,7 +18,8 @@
  *
  * CREDITS
  *   Temporary allocation and list handling from the CST-405 course starter code.
- *   AST -> TAC translation and the optimizer: Alissa Head.
+ *   AST -> TAC translation (including loop lowering and the break/continue
+ *   label stack) and the optimizer: Alissa Head.
  * ========================================================================= */
 
 #include <stdio.h>
@@ -152,6 +153,36 @@ static void generateTACStmt(ASTNode* node);
 
 /* More than four is rejected in semantic.c, so this only bounds the array. */
 #define MAX_CALL_ARGS 32
+
+/* THE LOOP LABEL STACK
+ * Lowering a loop pushes its exit label (where break goes) and its
+ * next-iteration label (where continue goes), and pops them when the body is
+ * done.  A break emitted anywhere in between jumps to whatever is on top,
+ * which is always the INNERMOST loop, so nesting needs no analysis at all. */
+#define MAX_LOOP_DEPTH 256
+static char* breakLabels[MAX_LOOP_DEPTH];
+static char* continueLabels[MAX_LOOP_DEPTH];
+static int   loopTop = 0;
+
+static void pushLoop(char* exitLabel, char* nextLabel) {
+    if (loopTop >= MAX_LOOP_DEPTH) {
+        fprintf(stderr, "TAC ERROR: loops nested more than %d deep\n", MAX_LOOP_DEPTH);
+        exit(1);
+    }
+    breakLabels[loopTop]    = exitLabel;
+    continueLabels[loopTop] = nextLabel;
+    loopTop++;
+}
+
+static void popLoop(void) { loopTop--; }
+
+/* Emit a loop's exit test:  t = cond ; IF_FALSE t GOTO exitLabel */
+static void emitLoopTest(ASTNode* cond, char* exitLabel) {
+    char* c = generateTACExpr(cond);
+    appendTAC(createTAC(TAC_IF_FALSE, c, exitLabel, NULL));
+    freeTemp(c);
+    free(c);
+}
 
 
 /* Map an AST operator character to its TAC opcode. */
@@ -374,6 +405,74 @@ static void generateTACStmt(ASTNode* node) {
             free(elseLabel);
             break;
         }
+
+        case NODE_WHILE: {
+            /*  Ltop:
+             *      t = cond
+             *      IF_FALSE t GOTO Lexit    <- the test comes FIRST, so a loop
+             *      ...body...                  whose condition starts false
+             *      GOTO Ltop                   runs its body zero times
+             *  Lexit:                                                       */
+            char* top  = newLabel();
+            char* exit = newLabel();
+            appendTAC(createTAC(TAC_LABEL, NULL, NULL, top));
+            emitLoopTest(node->data.loop.cond, exit);
+
+            pushLoop(exit, top);              /* continue re-tests the condition */
+            generateTACStmt(node->data.loop.body);
+            popLoop();
+
+            appendTAC(createTAC(TAC_GOTO, top, NULL, NULL));
+            appendTAC(createTAC(TAC_LABEL, NULL, NULL, exit));
+            free(top);
+            free(exit);
+            break;
+        }
+
+        case NODE_FOR: {
+            /*      ...init...
+             *  Ltop:
+             *      t = cond                 (omitted when there is no cond)
+             *      IF_FALSE t GOTO Lexit
+             *      ...body...
+             *  Lnext:                       <- where continue goes
+             *      ...update...
+             *      GOTO Ltop
+             *  Lexit:
+             * Lnext is the reason `for` is its own node: continue must still run
+             * the update.  When nothing jumps to Lnext, the optimizer removes
+             * it as an unused label. */
+            char* top  = newLabel();
+            char* next = newLabel();
+            char* exit = newLabel();
+            generateTACStmt(node->data.loop.init);
+            appendTAC(createTAC(TAC_LABEL, NULL, NULL, top));
+            if (node->data.loop.cond) emitLoopTest(node->data.loop.cond, exit);
+
+            pushLoop(exit, next);
+            generateTACStmt(node->data.loop.body);
+            popLoop();
+
+            appendTAC(createTAC(TAC_LABEL, NULL, NULL, next));
+            generateTACStmt(node->data.loop.update);
+            appendTAC(createTAC(TAC_GOTO, top, NULL, NULL));
+            appendTAC(createTAC(TAC_LABEL, NULL, NULL, exit));
+            free(top);
+            free(next);
+            free(exit);
+            break;
+        }
+
+        case NODE_BREAK:
+        case NODE_CONTINUE:
+            /* Jump to the innermost loop's exit (break) or next-iteration
+             * label (continue): whatever is on top of the stack.  semantic.c
+             * has already guaranteed the stack is not empty. */
+            appendTAC(createTAC(TAC_GOTO, node->type == NODE_BREAK
+                                    ? breakLabels[loopTop - 1]
+                                    : continueLabels[loopTop - 1],
+                                NULL, NULL));
+            break;
 
         case NODE_PRINT: {
             char* value = generateTACExpr(node->data.expr);
@@ -1116,6 +1215,12 @@ static TACList optimizePass(TACList* in) {
     return out;
 }
 
+/* Pass limit.  20 is a safety net: every pass that changes something makes
+ * the list strictly smaller or simpler, so a real fixed point arrives long
+ * before it.  The -onepass flag sets it to 1, to show what a single pass
+ * leaves behind. */
+int maxOptPasses = 20;
+
 void optimizeTAC(void) {
     memset(&optStats, 0, sizeof optStats);
     optStats.instructionsBefore = countTAC(&tacList);
@@ -1131,7 +1236,7 @@ void optimizeTAC(void) {
         pass++;
         trace("  pass %d: %3d change(s), %3d instructions\n",
                pass, changesThisPass, countTAC(&work));
-    } while (changesThisPass > 0 && pass < 20);
+    } while (changesThisPass > 0 && pass < maxOptPasses);
 
     optimizedList = work;
     optStats.passes = pass;

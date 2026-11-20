@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: main.c   —   The driver — runs all six phases in order
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -15,7 +15,7 @@
  *   The output files, a summary, and exit status 0 (success) or 1 (any error).
  *
  * CREDITS
- *   Six-phase driver from the CST-405 course starter code.  Lexical-error check, -O0 and -nopeep
+ *   Six-phase driver from the CST-405 course starter code.  Lexical-error check, -O0, -onepass and -nopeep
  *   flags, and the peephole report: Alissa Head.
  * ========================================================================= */
 
@@ -36,12 +36,14 @@
  * the work of fixing it.
  *
  * USAGE
- *   ./minicompiler <input.cm> <output.s> [-q] [-O0] [-nopeep]
+ *   ./minicompiler <input.cm> <output.s> [-q] [-O0] [-onepass] [-nopeep]
  *
  *   -q        quiet: print only errors and the final summary.  Use this once
  *             the trace stops being useful and you just want the assembly.
  *   -O0       skip Phase 5: the back end translates the TAC exactly as
  *             Phase 4 produced it
+ *   -onepass  stop the TAC optimizer after ONE pass instead of running it
+ *             to a fixed point, to show what a single pass misses
  *   -nopeep   skip the peephole pass over the generated MIPS
  *
  *   Exit status is 0 when the program compiled and 1 when any phase found
@@ -108,7 +110,7 @@ static void deriveTacNames(const char* out, char* tac, char* opt) {
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        printf("Usage: %s <input.cm> <output.s> [-q] [-O0] [-nopeep]\n", argv[0]);
+        printf("Usage: %s <input.cm> <output.s> [-q] [-O0] [-onepass] [-nopeep]\n", argv[0]);
         printf("Example: ./minicompiler test.c test.s\n");
         return 1;
     }
@@ -117,8 +119,9 @@ int main(int argc, char* argv[]) {
         if      (strcmp(argv[i], "-q") == 0)      quiet = 1;
         else if (strcmp(argv[i], "-O0") == 0)     optimize = 0;
         else if (strcmp(argv[i], "-nopeep") == 0) peepholeEnabled = 0;
+        else if (strcmp(argv[i], "-onepass") == 0) maxOptPasses = 1;
         else {
-            fprintf(stderr, "Error: unknown option '%s' (expected -q, -O0 or -nopeep)\n", argv[i]);
+            fprintf(stderr, "Error: unknown option '%s' (expected -q, -O0, -onepass or -nopeep)\n", argv[i]);
             return 1;
         }
     }
@@ -224,7 +227,10 @@ int main(int argc, char* argv[]) {
     printf("  Assembly written to : %s\n", argv[2]);
     printf("  TAC listings        : %s, %s\n", tacFile, optTacFile);
     printf("\n  Optimization\n");
-    printf("    passes to fixed point : %d\n", os.passes);
+    if (maxOptPasses == 1)
+        printf("    passes                : 1 (stopped early by -onepass; not a fixed point)\n");
+    else
+        printf("    passes to fixed point : %d\n", os.passes);
     printf("    TAC instructions      : %d -> %d",
            os.instructionsBefore, os.instructionsAfter);
     if (os.instructionsBefore)

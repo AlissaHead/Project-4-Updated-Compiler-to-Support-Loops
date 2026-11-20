@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: tac.h   —   Phases 4 & 5 — Intermediate code and optimization
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -151,6 +151,7 @@ typedef struct {
 void printTAC(void);                        /* Display unoptimized listing        */
 void optimizeTAC(void);                     /* Run optimization to a fixed point  */
 void skipOptimizeTAC(void);                 /* -O0: back end uses the TAC as-is   */
+extern int maxOptPasses;                    /* 20 normally; 1 with -onepass       */
 void printOptimizedTAC(void);               /* Display optimized listing          */
 TACList* getOptimizedTAC(void);             /* The list the back end consumes     */
 TACList* getUnoptimizedTAC(void);           /* The list before optimization       */
