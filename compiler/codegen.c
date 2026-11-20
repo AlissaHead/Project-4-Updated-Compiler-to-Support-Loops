@@ -1,5 +1,5 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: codegen.c   —   Phase 6 — MIPS code generation
  * -------------------------------------------------------------------------
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
@@ -261,6 +261,43 @@ static void flushRegisters(const char* why) {
         spillReg(i);
         releaseReg(i);
     }
+}
+
+/* Is temporary `name` read by any instruction from `from` up to the next
+ * label, jump or end of function?  That is the only stretch where a value
+ * left in a temporary can still be used: every path into a label is a fresh
+ * start, because the optimizer forgets what it knew at a label and the TAC
+ * generator never carries a temporary from one statement into the next. */
+static int tempReadAhead(TACInstr* from, const char* name) {
+    for (TACInstr* c = from; c; c = c->next) {
+        if (c->op == TAC_LABEL || c->op == TAC_FUNC_END) return 0;
+        if (c->arg1 && strcmp(c->arg1, name) == 0) return 1;
+        if (c->arg2 && strcmp(c->arg2, name) == 0) return 1;
+        if (c->op == TAC_ARRAY_STORE && c->result && strcmp(c->result, name) == 0) return 1;
+        /* overwritten before anything read it: the old value is dead.  (The
+         * reads of this same instruction were checked just above, so
+         * t0 = t0 + 1 still counts as a read.) */
+        if (c->op != TAC_ARRAY_STORE && c->result && strcmp(c->result, name) == 0) return 0;
+        if (c->op == TAC_GOTO) return 0;
+    }
+    return 0;
+}
+
+/* The same flush at a LABEL or a JUMP, except that a temporary nothing will
+ * read again is dropped instead of written back to memory.  In a loop this
+ * removes a dead store on every iteration (the loop condition's temporary).
+ *
+ * The check is per temporary, not a blanket rule, for a reason found by
+ * testing: copy propagation can rewrite `c = t3; ... print(c)` into
+ * `print(t3)` past an if-branch, and on the fall-through path t3 IS still
+ * needed.  (Calls keep using flushRegisters: in f(1) + g(2) the result of f
+ * must survive the call to g.) */
+static void flushAtBranch(const char* why, TACInstr* next) {
+    for (int i = 0; i < NUM_TEMP_REGS; i++)
+        if (regAlloc.regs[i].inUse && isTemp(regAlloc.regs[i].varName) &&
+            !tempReadAhead(next, regAlloc.regs[i].varName))
+            regAlloc.regs[i].isDirty = 0;
+    flushRegisters(why);
 }
 
 void printRegAllocStats(void) {
@@ -705,12 +742,12 @@ void generateMIPSFromTAC(const char* filename) {
                     /* Control can arrive here from elsewhere, with a different
                      * idea of what the registers hold.  Memory is the one
                      * thing every path agrees on. */
-                    flushRegisters("before label");
+                    flushAtBranch("before label", i->next);
                     fprintf(out, "%s:\n", i->result);
                     break;
 
                 case TAC_GOTO:
-                    flushRegisters("before jump");
+                    flushAtBranch("before jump", i->next);
                     fprintf(out, "    j    %s\n", i->arg1);
                     break;
 
@@ -719,7 +756,7 @@ void generateMIPSFromTAC(const char* filename) {
                     /* Read the condition first, flush second: flushing frees
                      * the cache entry but leaves the value in the register. */
                     int a = operandReg(i->arg1);
-                    flushRegisters("before branch");
+                    flushAtBranch("before branch", i->next);
                     fprintf(out, "    %s $t%d, %s\n",
                             i->op == TAC_IF_FALSE ? "beqz" : "bnez", a, i->arg2);
                     break;

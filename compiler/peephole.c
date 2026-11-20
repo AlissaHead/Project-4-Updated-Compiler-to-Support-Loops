@@ -1,11 +1,14 @@
 /* =========================================================================
- * CST-405  ·  Project 3  ·  Complex Variables and Functions
+ * CST-405  ·  Project 4  ·  Loops and Optimization
  * FILE: peephole.c   —   Phase 6b — peephole optimization of MIPS assembly
  * -------------------------------------------------------------------------
  * codegen.c writes the assembly for a whole program into a temporary file,
  * splits it into lines and hands the array to peepholeOptimize().  The pass
  * sweeps the array repeatedly, applying the rules below, until a sweep
  * changes nothing (a fixed point — the same structure as the TAC optimizer).
+ *
+ * CREDITS
+ *   Alissa Head.
  *
  *   RULE                 PATTERN                         BECOMES
  *   self move            move $t1, $t1                   (deleted)
